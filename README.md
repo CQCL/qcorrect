@@ -1,6 +1,6 @@
 # qcorrect
 
-Quantinnum error correction tools
+Quantinuum error correction tools
 
 ## License
 
