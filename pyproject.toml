@@ -1,0 +1,16 @@
+[project]
+name = "qcorrect"
+version = "0.1.0"
+description = "Quantinuum error correction tools"
+licence = {file = "LICENCE"}
+readme = "README.md"
+requires-python = ">=3.10,<4"
+dependencies = [
+    "guppylang~=0.20",
+    "hugr>=0.12.2",
+]
+
+[dependency-groups]
+lint = [
+    "ruff>=0.12.1",
+]
