@@ -12,6 +12,13 @@ dependencies = [
 ]
 
 [dependency-groups]
+dev = [
+    {include-group = "lint"},
+    {include-group = "test"}
+]
 lint = [
     "ruff>=0.12.1",
+]
+test = [
+    "ipykernel>=6.29.5",
 ]
