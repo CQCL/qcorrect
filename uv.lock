@@ -313,6 +313,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "guppylang" },
     { name = "hugr" },
+    { name = "ruff" },
 ]
 
 [package.dev-dependencies]
@@ -324,6 +325,7 @@ lint = [
 requires-dist = [
     { name = "guppylang", specifier = "~=0.20" },
     { name = "hugr", specifier = ">=0.12.2" },
+    { name = "ruff", specifier = ">=0.12.1" },
 ]
 
 [package.metadata.requires-dev]
