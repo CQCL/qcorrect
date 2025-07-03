@@ -2,7 +2,7 @@
 name = "qcorrect"
 version = "0.1.0"
 description = "Quantinuum error correction tools"
-licence = {file = "LICENCE"}
+license = {file = "LICENCE"}
 readme = "README.md"
 requires-python = ">=3.10,<4"
 dependencies = [
