@@ -11,6 +11,10 @@ dependencies = [
     "ruff>=0.12.1",
 ]
 
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [dependency-groups]
 dev = [
     {include-group = "lint"},
