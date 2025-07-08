@@ -1,1 +1,1 @@
-from qcorrect.decorator import operation, type
+from qcorrect.decorator import code, operation, type
