@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Generic
 
 from guppylang.decorator import get_calling_frame, guppy
@@ -6,6 +7,7 @@ from guppylang.std.builtins import array, comptime, nat, owned
 
 import qcorrect as qct
 
+# Define logical code block
 N = guppy.nat_var("N")
 
 
@@ -14,28 +16,38 @@ class CodeBlock(Generic[N]):
     data_qs: array[phys.qubit, N]
 
 
-@qct.code
-class CodeDef:
+# Define code operations
+class CodeDef(qct.CodeDefinition):
     def __init__(self, n: nat):
-        self.n = n
-        # Currently necessary to store calling frame to parse guppy definitions
-        # Ideally this would move to the `qct.code` decorator
+        self.n: nat = n
+        # TODO: Move frame def to qcorrect
+        # This is the only place where both `self` and `CodeBlock` are in scope
         self.frame = get_calling_frame()
 
     @qct.operation
-    def zero() -> "CodeBlock[comptime(self.n)]":
-        return CodeBlock(array(phys.qubit() for _ in range(comptime(self.n))))
+    def zero(self) -> Callable:
+        @guppy
+        def circuit() -> "CodeBlock[comptime(self.n)]":
+            return CodeBlock(array(phys.qubit() for _ in range(comptime(self.n))))
+
+        return circuit
 
     @qct.operation
-    def measure(
-        q: "CodeBlock[comptime(self.n)] @ owned",
-    ) -> "array[bool, comptime(self.n)]":
-        return phys.measure_array(q.data_qs)
+    def measure(self) -> Callable:
+        @guppy
+        def circuit(
+            q: "CodeBlock[comptime(self.n)] @ owned",
+        ) -> "array[bool, comptime(self.n)]":
+            return phys.measure_array(q.data_qs)
+
+        return circuit
 
 
+# Create code instance and get guppy module
 code = CodeDef(5).get_module()
 
 
+# Write logical guppy program
 @guppy
 def main() -> None:
     q = code.zero()

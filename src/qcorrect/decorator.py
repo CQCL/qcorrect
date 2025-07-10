@@ -1,6 +1,5 @@
-import functools
 import inspect
-from types import ModuleType
+from types import FrameType, ModuleType
 
 from guppylang.checker.core import Globals
 from guppylang.checker.func_checker import check_signature
@@ -14,10 +13,10 @@ from hugr import tys as ht
 from hugr.ext import ExplicitBound, Extension, OpDef, OpDefSig, TypeDef
 from pydantic_extra_types.semantic_version import SemanticVersion
 
-# This is required to get parsed function definitions
+# TODO: This is required to get parsed function definitions
 ENGINE.reset()
 
-# Currently used to store hugr extensions for types
+# TODO: Currently used to store hugr extensions for types
 # Should be moved to the `code` decorator
 hugr_ext = Extension("qcorrect", SemanticVersion(0, 1, 0))
 
@@ -52,54 +51,47 @@ def type(copyable: bool = True, droppable: bool = True):
 
     return wrapper
 
-
 @custom_guppy_decorator
 def operation(defn):
     """Decorator to define code operations"""
+    # TODO: link operations to tket operations
+    # TODO: check signature of operation definition
 
-    @functools.wraps(defn)
-    def dec(self, *args, **kwargs):
-        func_ast, _ = parse_py_func(defn, DEF_STORE.sources)
-        ty = check_signature(func_ast, Globals(self.frame))
+    defn.__setattr__("qct_op", True)
 
-        op_def = OpDef(
-            name=defn.__name__,
-            description=defn.__doc__ or "",
-            signature=OpDefSig(poly_func=ty.to_hugr_poly()),
-            lower_funcs=[],
-        )
+    return defn
 
-        self.hugr_ext.add_op_def(op_def)
+class CodeDefinition:
+    # TODO: make this a frozen dataclass
+    frame: FrameType
 
-        def empty_dec() -> None: ...
+    def get_module(self):
 
-        return guppy.hugr_op(
-            quantum_op(defn.__name__, ext=self.hugr_ext),
-            name=defn.__name__,
-            signature=ty,
-        )(empty_dec)
+        self.guppy_module = ModuleType(self.__class__.__name__)
+        self.hugr_ext = Extension(self.__class__.__name__, SemanticVersion(0, 1, 0))
 
-    dec.__setattr__("qct_op", True)
+        for name, defn in inspect.getmembers(self, predicate=inspect.ismethod):
+            if hasattr(defn, "qct_op"):
+                guppy_defn = defn().wrapped.python_func
+                func_ast, _ = parse_py_func(guppy_defn, DEF_STORE.sources)
+                ty = check_signature(func_ast, Globals(self.frame))
 
-    return dec
+                op_def = OpDef(
+                    name=defn.__name__,
+                    description=defn.__doc__ or "",
+                    signature=OpDefSig(poly_func=ty.to_hugr_poly()),
+                    lower_funcs=[], # TODO: Get lowering function
+                )
 
+                self.hugr_ext.add_op_def(op_def)
 
-@custom_guppy_decorator
-def code(cls):
-    """Decorator to define a code"""
+                def empty_dec() -> None: ...
 
-    class CodeDefBase(cls):
-        @custom_guppy_decorator
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            self.guppy_module = ModuleType(cls.__name__)
-            self.hugr_ext = Extension(cls.__name__, SemanticVersion(0, 1, 0))
+                guppy_op = guppy.hugr_op(
+                    quantum_op(defn.__name__, ext=self.hugr_ext),
+                    name=defn.__name__,
+                    signature=ty,
+                )(empty_dec)
+                self.guppy_module.__setattr__(name, guppy_op)
 
-        def get_module(self):
-            for name, defn in inspect.getmembers(self, predicate=inspect.ismethod):
-                if hasattr(defn, "qct_op"):
-                    self.guppy_module.__setattr__(name, defn())
-
-            return self.guppy_module
-
-    return CodeDefBase
+        return self.guppy_module
