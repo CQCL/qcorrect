@@ -1,0 +1,49 @@
+name: Pull Request
+
+on:
+    push:
+        branches:
+            - main
+    pull_request:
+        branches:
+            - '**'
+    merge_group:
+        types: [checks_requested]
+
+env:
+    SCCACHE_GHA_ENABLED: "true"
+    UV_VERSION: '0.7.19'
+
+jobs:
+    check:
+        name: Check Python (${{ matrix.python-version }})
+        runs-on: ubuntu-latest
+        env:
+            PYTHON_VERSION: ${{ matrix.python-version }}
+
+        strategy:
+            matrix:
+                python-version: [ '3.10', '3.12' ]
+
+        steps:
+            - uses: actions/checkout@v4
+            - name: Run sccache-cache
+              uses: mozilla-actions/sccache-action@v0.0.9
+
+            - name: Install UV
+              uses: astral-sh/setup-uv@v5
+              with:
+                version: ${{ env.UV_VERSION }}
+                enable-cache: true
+            
+            - name: Install qcorrect
+              run: uv sync --locked --all-extras --dev
+
+            - name: Check formatting with ruff
+              run: uv run ruff format --check src
+
+            - name: Lint with ruff
+              run: uv run ruff check src
+
+            - name: Run tests
+              run: uv run pytest
