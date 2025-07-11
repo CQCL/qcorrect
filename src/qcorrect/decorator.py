@@ -7,6 +7,7 @@ from guppylang.definition.common import DefId
 from guppylang.definition.struct import RawStructDef
 from guppylang.definition.value import CallableDef
 from guppylang.engine import DEF_STORE, ENGINE
+from guppylang.tys.subst import Inst
 from hugr import ops
 from hugr import tys as ht
 from hugr.ext import ExplicitBound, Extension, OpDef, OpDefSig, TypeDef
@@ -99,8 +100,14 @@ class CodeDefinition:
 
                 def empty_dec() -> None: ...
 
+                def hugr_op(op_def):
+                    def op(ty: ht.FunctionType, inst: Inst) -> ops.DataflowOp:
+                        return ops.ExtOp(op_def, ty)
+
+                    return op
+
                 guppy_op = guppy.hugr_op(
-                    lambda ty, inst: ops.ExtOp(op_def, ty),
+                    hugr_op(op_def),
                     name=name,
                     signature=ty,
                 )(empty_dec)
