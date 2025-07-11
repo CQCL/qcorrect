@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Generic
+from typing import Generic, no_type_check
 
 from guppylang.decorator import guppy
 from guppylang.std import quantum as phys
@@ -24,6 +24,7 @@ class CodeDef(qct.CodeDefinition):
     @qct.operation
     def zero(self) -> Callable:
         @guppy
+        @no_type_check
         def circuit() -> "CodeBlock[comptime(self.n)]":
             return CodeBlock(array(phys.qubit() for _ in range(comptime(self.n))))
 
@@ -32,6 +33,7 @@ class CodeDef(qct.CodeDefinition):
     @qct.operation
     def measure(self) -> Callable:
         @guppy
+        @no_type_check
         def circuit(
             q: "CodeBlock[comptime(self.n)] @ owned",
         ) -> "array[bool, comptime(self.n)]":
