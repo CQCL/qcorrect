@@ -26,4 +26,5 @@ lint = [
 test = [
     "ipykernel>=6.29.5",
     "pytest>=8.4.1",
+    "selene-hugr-qis-compiler>=0.2.0rc1",
 ]
