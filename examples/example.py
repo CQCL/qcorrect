@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from typing import Generic
 
-from guppylang.decorator import get_calling_frame, guppy
+from guppylang.decorator import guppy
 from guppylang.std import quantum as phys
 from guppylang.std.builtins import array, comptime, nat, owned
 
@@ -20,9 +20,6 @@ class CodeBlock(Generic[N]):
 class CodeDef(qct.CodeDefinition):
     def __init__(self, n: nat):
         self.n: nat = n
-        # TODO: Move frame def to qcorrect
-        # This is the only place where both `self` and `CodeBlock` are in scope
-        self.frame = get_calling_frame()
 
     @qct.operation
     def zero(self) -> Callable:

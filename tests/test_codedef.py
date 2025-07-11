@@ -1,10 +1,12 @@
 from collections.abc import Callable
 from typing import Generic
 
+import pytest
 from guppylang.decorator import get_calling_frame, guppy
 from guppylang.error import GuppyError, GuppyTypeError
 from guppylang.std import quantum as phys
 from guppylang.std.builtins import array, comptime, nat, owned
+from hugr.package import ModulePointer
 
 import qcorrect as qct
 
@@ -48,7 +50,9 @@ def test_code_usage():
         q = code.zero()
         code.measure(q)
 
-    main.compile()
+    hugr = main.compile()
+
+    assert isinstance(hugr, ModulePointer)
 
 
 def test_mismatched_codes():
@@ -60,10 +64,9 @@ def test_mismatched_codes():
         q = code4.zero()
         code5.measure(q)
 
-    try:
+    with pytest.raises(GuppyTypeError):
         main.compile()
-    except GuppyTypeError:
-        assert True
+
 
 def test_block_dropped():
     code = CodeDef(5).get_module()
@@ -72,7 +75,5 @@ def test_block_dropped():
     def main() -> None:
         q = code.zero()
 
-    try:
+    with pytest.raises(GuppyError):
         main.compile()
-    except GuppyError:
-        assert True
