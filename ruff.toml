@@ -74,11 +74,10 @@ ignore = [
 ]
 
 [lint.per-file-ignores]
-"guppy/ast_util.py" = ["B009", "B010"]
-"guppy/decorator.py" = ["B010"]
-"tests/integration/*" = ["F841", "C416", "RUF005"]
-"tests/{hugr,integration}/*" = ["B", "FBT", "SIM", "I"]
-"__init__.py" = ["F401"]                                # module imported but unused
+"src/qcorrect/decorator.py" = ["B023"]
+"tests/*" = ["F841", "C416", "RUF005"]
+"examples/*" = ["F821"]
+"__init__.py" = ["F401"]                            
 
 # [pydocstyle]
 # convention = "google"

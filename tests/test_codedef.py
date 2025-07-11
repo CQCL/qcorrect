@@ -1,13 +1,15 @@
 from collections.abc import Callable
-from typing import Generic, no_type_check
+from typing import Generic
 
-from guppylang.decorator import guppy
+import pytest
+from guppylang.decorator import get_calling_frame, guppy
+from guppylang.error import GuppyError, GuppyTypeError
 from guppylang.std import quantum as phys
 from guppylang.std.builtins import array, comptime, nat, owned
+from hugr.package import ModulePointer
 
 import qcorrect as qct
 
-# Define logical code block
 N = guppy.nat_var("N")
 
 
@@ -16,15 +18,14 @@ class CodeBlock(Generic[N]):
     data_qs: array[phys.qubit, N]
 
 
-# Define code operations
 class CodeDef(qct.CodeDefinition):
     def __init__(self, n: nat):
         self.n: nat = n
+        self.frame = get_calling_frame()
 
     @qct.operation
     def zero(self) -> Callable:
         @guppy
-        @no_type_check
         def circuit() -> "CodeBlock[comptime(self.n)]":
             return CodeBlock(array(phys.qubit() for _ in range(comptime(self.n))))
 
@@ -33,7 +34,6 @@ class CodeDef(qct.CodeDefinition):
     @qct.operation
     def measure(self) -> Callable:
         @guppy
-        @no_type_check
         def circuit(
             q: "CodeBlock[comptime(self.n)] @ owned",
         ) -> "array[bool, comptime(self.n)]":
@@ -42,15 +42,38 @@ class CodeDef(qct.CodeDefinition):
         return circuit
 
 
-# Create code instance and get guppy module
-code = CodeDef(5).get_module()
+def test_code_usage():
+    code = CodeDef(5).get_module()
+
+    @guppy
+    def main() -> None:
+        q = code.zero()
+        code.measure(q)
+
+    hugr = main.compile()
+
+    assert isinstance(hugr, ModulePointer)
 
 
-# Write logical guppy program
-@guppy
-def main() -> None:
-    q = code.zero()
-    code.measure(q)
+def test_mismatched_codes():
+    code4 = CodeDef(4).get_module()
+    code5 = CodeDef(5).get_module()
+
+    @guppy
+    def main() -> None:
+        q = code4.zero()
+        code5.measure(q)
+
+    with pytest.raises(GuppyTypeError):
+        main.compile()
 
 
-hugr = main.compile()
+def test_block_dropped():
+    code = CodeDef(5).get_module()
+
+    @guppy
+    def main() -> None:
+        q = code.zero()
+
+    with pytest.raises(GuppyError):
+        main.compile()
