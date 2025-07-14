@@ -82,12 +82,7 @@ class CodeDefinition:
                     name=name,
                     description=defn.__doc__ or "",
                     signature=OpDefSig(poly_func=ty.to_hugr_poly()),
-                    lower_funcs=[
-                        # FixedHugr(
-                        #     extensions=ht.ExtensionSet(),
-                        #     hugr=compiled_def.package.to_str(),
-                        # )
-                    ],
+                    lower_funcs=[],
                 )
 
                 self.hugr_ext.add_op_def(op_def)
