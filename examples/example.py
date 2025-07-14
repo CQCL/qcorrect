@@ -1,55 +1,56 @@
-from typing import Generic
+from collections.abc import Callable
+from typing import Generic, no_type_check
 
-from guppylang import guppy
+from guppylang.decorator import guppy
 from guppylang.std import quantum as phys
 from guppylang.std.builtins import array, comptime, nat, owned
 
 import qcorrect as qct
 
-# Define a new codeblock type with parameter `N`
+# Define logical code block
 N = guppy.nat_var("N")
 
-class ExampleCode:
 
-    @qct.type(copyable=False, droppable=False)
-    class CodeBlock(Generic[N]):
-        data_qs: array[phys.qubit, N]
-
-    # Define logical operations
-    @qct.operation
-    def zero(n: nat @ comptime) -> "CodeBlock[n]":
-        return CodeBlock(array(phys.qubit() for _ in range(n)))
-
-    @qct.operation
-    def measure(q: CodeBlock[N] @ owned) -> array[bool, N]:
-        return phys.measure_array(q.data_qs)
-
-
-
-# Define a new codeblock type with parameter `N`
-N = guppy.nat_var("N")
-
-@qct.type(copyable=False, droppable=False)
+@qct.type
 class CodeBlock(Generic[N]):
     data_qs: array[phys.qubit, N]
 
-class ExampleCode:
 
-    # Define logical operations
+# Define code operations
+class CodeDef(qct.CodeDefinition):
+    def __init__(self, n: nat):
+        self.n: nat = n
+
     @qct.operation
-    def zero(n: nat @ comptime) -> "CodeBlock[n]":
-        return CodeBlock(array(phys.qubit() for _ in range(n)))
+    def zero(self) -> Callable:
+        @guppy
+        @no_type_check
+        def circuit() -> "CodeBlock[comptime(self.n)]":
+            return CodeBlock(array(phys.qubit() for _ in range(comptime(self.n))))
+
+        return circuit
 
     @qct.operation
-    def measure(q: CodeBlock[N] @ owned) -> array[bool, N]:
-        return phys.measure_array(q.data_qs)
-# Define a code instance
-code = ExampleCode()
+    def measure(self) -> Callable:
+        @guppy
+        @no_type_check
+        def circuit(
+            q: "CodeBlock[comptime(self.n)] @ owned",
+        ) -> "array[bool, comptime(self.n)]":
+            return phys.measure_array(q.data_qs)
 
-# Use new code to create a hugr module
+        return circuit
+
+
+# Create code instance and get guppy module
+code = CodeDef(5).get_module()
+
+
+# Write logical guppy program
 @guppy
 def main() -> None:
-    q = code.zero(6)
+    q = code.zero()
     code.measure(q)
+
 
 hugr = main.compile()
