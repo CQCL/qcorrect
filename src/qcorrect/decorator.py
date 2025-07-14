@@ -22,34 +22,28 @@ hugr_ext = Extension("qcorrect", SemanticVersion(0, 1, 0))
 
 
 @custom_guppy_decorator
-def type(copyable: bool = True, droppable: bool = True):
-    """Decorator to define code types"""
-    frame = get_calling_frame()
+def type(cls):
+    defn = RawStructDef(DefId.fresh(), cls.__name__, None, cls)
 
-    def wrapper(cls):
-        defn = RawStructDef(DefId.fresh(), cls.__name__, None, cls)
+    parsed_defn = defn.parse(Globals(get_calling_frame()), DEF_STORE.sources)
 
-        parsed_defn = defn.parse(Globals(frame), DEF_STORE.sources)
+    type_def = TypeDef(
+        name=cls.__name__,
+        description=cls.__doc__ or "",
+        params=[],
+        bound=ExplicitBound(ht.TypeBound.Any),
+    )
 
-        type_def = TypeDef(
-            name=cls.__name__,
-            description=cls.__doc__ or "",
-            params=[],
-            bound=ExplicitBound(ht.TypeBound.Any),
-        )
+    extType = ht.ExtType(type_def=type_def, args=[])
 
-        extType = ht.ExtType(type_def=type_def, args=[])
+    hugr_ext.add_type_def(type_def)
 
-        hugr_ext.add_type_def(type_def)
-
-        return guppy.type(
-            extType,
-            copyable=copyable,
-            droppable=droppable,
-            params=parsed_defn.params,
-        )(cls)
-
-    return wrapper
+    return guppy.type(
+        extType,
+        copyable=False,
+        droppable=False,
+        params=parsed_defn.params,
+    )(cls)
 
 
 @custom_guppy_decorator
