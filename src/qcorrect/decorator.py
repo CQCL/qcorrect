@@ -3,19 +3,17 @@ from dataclasses import dataclass
 from types import ModuleType
 from typing import TYPE_CHECKING
 
-from guppylang.checker.core import Globals
 from guppylang.decorator import custom_guppy_decorator, get_calling_frame, guppy
 from guppylang.definition.common import DefId
 from guppylang.definition.function import ParsedFunctionDef
 from guppylang.definition.struct import RawStructDef
-from guppylang.definition.ty import OpaqueTypeDef
 from guppylang.engine import DEF_STORE, ENGINE
 from guppylang.tracing.object import GuppyDefinition
 from guppylang.tys.subst import Inst
 from hugr import ext as he
 from hugr import ops
 from hugr import tys as ht
-from hugr.ext import ExplicitBound, Extension, OpDef, OpDefSig, TypeDef
+from hugr.ext import Extension, OpDef, OpDefSig
 from pydantic_extra_types.semantic_version import SemanticVersion
 
 if TYPE_CHECKING:
