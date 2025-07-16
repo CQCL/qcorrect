@@ -1,49 +1,42 @@
 import inspect
+from dataclasses import dataclass
 from types import ModuleType
+from typing import TYPE_CHECKING
 
 from guppylang.checker.core import Globals
 from guppylang.decorator import custom_guppy_decorator, get_calling_frame, guppy
 from guppylang.definition.common import DefId
+from guppylang.definition.function import ParsedFunctionDef
 from guppylang.definition.struct import RawStructDef
-from guppylang.definition.value import CallableDef
+from guppylang.definition.ty import OpaqueTypeDef
 from guppylang.engine import DEF_STORE, ENGINE
+from guppylang.tracing.object import GuppyDefinition
 from guppylang.tys.subst import Inst
+from hugr import ext as he
 from hugr import ops
 from hugr import tys as ht
 from hugr.ext import ExplicitBound, Extension, OpDef, OpDefSig, TypeDef
 from pydantic_extra_types.semantic_version import SemanticVersion
 
-# This is required to get parsed function definitions
-ENGINE.reset()
+if TYPE_CHECKING:
+    from hugr.package import ModulePointer
 
-# Currently used to store hugr extensions for types
-# Should be moved to the `code` decorator
-hugr_ext = Extension("qcorrect", SemanticVersion(0, 1, 0))
+
+@dataclass(frozen=True)
+class RawInnerStructDef(RawStructDef):
+    pass
 
 
 @custom_guppy_decorator
 def type(cls):
-    defn = RawStructDef(DefId.fresh(), cls.__name__, None, cls)
-
-    parsed_defn = defn.parse(Globals(get_calling_frame()), DEF_STORE.sources)
-
-    type_def = TypeDef(
-        name=cls.__name__,
-        description=cls.__doc__ or "",
-        params=[],
-        bound=ExplicitBound(ht.TypeBound.Any),
-    )
-
-    extType = ht.ExtType(type_def=type_def, args=[])
-
-    hugr_ext.add_type_def(type_def)
-
-    return guppy.type(
-        extType,
-        copyable=False,
-        droppable=False,
-        params=parsed_defn.params,
-    )(cls)
+    defn = RawInnerStructDef(DefId.fresh(), cls.__name__, None, cls)
+    DEF_STORE.register_def(defn, get_calling_frame())
+    for val in cls.__dict__.values():
+        if isinstance(val, GuppyDefinition):
+            DEF_STORE.register_impl(defn.id, val.wrapped.name, val.id)
+    # We're pretending to return the class unchanged, but in fact we return
+    # a `GuppyDefinition` that handles the comptime logic
+    return GuppyDefinition(defn)  # type: ignore[return-value]
 
 
 @custom_guppy_decorator
@@ -63,43 +56,52 @@ class CodeDefinition:
     def get_module(self) -> ModuleType:
         self.guppy_module = ModuleType(self.__class__.__name__)
         self.hugr_ext = Extension(self.__class__.__name__, SemanticVersion(0, 1, 0))
-        self.inner_defs = {}
+        self.compiled_defs: dict[str, tuple[DefId, ModulePointer]] = {}
+        self.qct_types: dict[str, GuppyDefinition] = {}
 
-        # Get all `inner` operations
+        # Compile all `inner` operations
         for name, defn in inspect.getmembers(self, predicate=inspect.ismethod):
             if hasattr(defn, "_qct_op"):
-                self.inner_defs[name] = defn()
+                self.compiled_defs[name] = defn().id, guppy.compile(defn())
 
-                # Define `outer` operations
-                guppy_def = self.inner_defs[name]
-                parsed_def = ENGINE.get_parsed(guppy_def.id)
+        # Define new `outer` operations
+        for inner_def_name in self.compiled_defs:
+            inner_id, inner_module_ptr = self.compiled_defs[inner_def_name]
 
-                assert isinstance(parsed_def, CallableDef)
+            parsed_def = ENGINE.get_parsed(inner_id)
 
-                ty = parsed_def.ty
+            assert isinstance(parsed_def, ParsedFunctionDef)
 
-                op_def = OpDef(
-                    name=name,
-                    description=defn.__doc__ or "",
-                    signature=OpDefSig(poly_func=ty.to_hugr_poly()),
-                    lower_funcs=[],
-                )
+            ty = parsed_def.ty
 
-                self.hugr_ext.add_op_def(op_def)
+            op_def = OpDef(
+                name=name,
+                description=defn.__doc__ or "",
+                signature=OpDefSig(poly_func=ty.to_hugr_poly()),
+                lower_funcs=[
+                    he.FixedHugr(
+                        ht.ExtensionSet([self.hugr_ext.name]),
+                        inner_module_ptr.module,
+                    )
+                ],
+            )
 
-                def empty_dec() -> None: ...
+            self.hugr_ext.add_op_def(op_def)
 
-                def hugr_op(op_def):
-                    def op(ty: ht.FunctionType, inst: Inst) -> ops.DataflowOp:
-                        return ops.ExtOp(op_def, ty)
+            def empty_dec() -> None: ...
 
-                    return op
+            def hugr_op(op_def):
+                def op(ty: ht.FunctionType, inst: Inst) -> ops.DataflowOp:
+                    return ops.ExtOp(op_def, ty)
 
-                guppy_op = guppy.hugr_op(
-                    hugr_op(op_def),
-                    name=name,
-                    signature=ty,
-                )(empty_dec)
-                self.guppy_module.__setattr__(name, guppy_op)
+                return op
+
+            guppy_op = guppy.hugr_op(
+                hugr_op(op_def),
+                name=inner_def_name,
+                signature=ty,
+            )(empty_dec)
+
+            self.guppy_module.__setattr__(inner_def_name, guppy_op)
 
         return self.guppy_module
