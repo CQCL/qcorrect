@@ -1,32 +1,32 @@
+import builtins
 import inspect
-from dataclasses import dataclass
+from collections.abc import Callable
 from types import ModuleType
-from typing import TYPE_CHECKING
+from typing import Any, ClassVar, TypeVar
 
 from guppylang.decorator import custom_guppy_decorator, get_calling_frame, guppy
 from guppylang.definition.common import DefId
 from guppylang.definition.function import ParsedFunctionDef
-from guppylang.definition.struct import RawStructDef
+from guppylang.definition.ty import OpaqueTypeDef
 from guppylang.engine import DEF_STORE, ENGINE
 from guppylang.tracing.object import GuppyDefinition
 from guppylang.tys.subst import Inst
+from guppylang.tys.ty import FuncInput, FunctionType
 from hugr import ext as he
 from hugr import ops
 from hugr import tys as ht
-from hugr.ext import Extension, OpDef, OpDefSig
+from hugr.ext import ExplicitBound, Extension, OpDef, OpDefSig, TypeDef
+from hugr.package import ModulePointer
 from pydantic_extra_types.semantic_version import SemanticVersion
 
-if TYPE_CHECKING:
-    from hugr.package import ModulePointer
+from qcorrect.tys import CheckedInnerStructDef, InnerStructType, RawInnerStructDef
 
-
-@dataclass(frozen=True)
-class RawInnerStructDef(RawStructDef):
-    pass
+T = TypeVar("T")
+F = TypeVar("F", bound=Callable[..., Any])
 
 
 @custom_guppy_decorator
-def type(cls):
+def type(cls: builtins.type[T]) -> builtins.type[T]:
     defn = RawInnerStructDef(DefId.fresh(), cls.__name__, None, cls)
     DEF_STORE.register_def(defn, get_calling_frame())
     for val in cls.__dict__.values():
@@ -38,7 +38,7 @@ def type(cls):
 
 
 @custom_guppy_decorator
-def operation(defn):
+def operation(defn: F) -> F:
     """Decorator to define code operations"""
 
     defn.__setattr__("_qct_op", True)
@@ -49,18 +49,48 @@ def operation(defn):
 class CodeDefinition:
     guppy_module: ModuleType
     hugr_ext: Extension
+    compiled_defs: ClassVar[dict[str, tuple[DefId, ModulePointer]]] = {}
 
     @custom_guppy_decorator
     def get_module(self) -> ModuleType:
         self.guppy_module = ModuleType(self.__class__.__name__)
         self.hugr_ext = Extension(self.__class__.__name__, SemanticVersion(0, 1, 0))
-        self.compiled_defs: dict[str, tuple[DefId, ModulePointer]] = {}
         self.qct_types: dict[str, GuppyDefinition] = {}
+        self.outer_type_defs: dict[DefId, OpaqueTypeDef] = {}
 
         # Compile all `inner` operations
-        for name, defn in inspect.getmembers(self, predicate=inspect.ismethod):
+        for name, defn in inspect.getmembers(self):
             if hasattr(defn, "_qct_op"):
                 self.compiled_defs[name] = defn().id, guppy.compile(defn())
+
+        # Find all RawInnerStructDef
+        for id in DEF_STORE.raw_defs:
+            if isinstance(DEF_STORE.raw_defs[id], RawInnerStructDef):
+                compiled_type = ENGINE.compiled[id]
+
+                assert isinstance(compiled_type, CheckedInnerStructDef)
+
+                type_def = TypeDef(
+                    name=compiled_type.name,
+                    description=compiled_type.description,
+                    params=compiled_type.params,
+                    bound=ExplicitBound(ht.TypeBound.Any),
+                )
+
+                self.hugr_ext.add_type_def(type_def)
+
+                outer_type_def = OpaqueTypeDef(
+                    DefId.fresh(),  # id
+                    compiled_type.name,  # name
+                    None,  # defined_at
+                    compiled_type.params,  # params
+                    not False,  # never_copyable
+                    not False,  # never_droppable
+                    lambda args: ht.ExtType(type_def=type_def, args=args),  # to_hugr
+                    ht.TypeBound.Any,  # bound
+                )
+
+                self.outer_type_defs[id] = outer_type_def
 
         # Define new `outer` operations
         for inner_def_name in self.compiled_defs:
@@ -70,10 +100,10 @@ class CodeDefinition:
 
             assert isinstance(parsed_def, ParsedFunctionDef)
 
-            ty = parsed_def.ty
+            ty = self.replace_inner_types(parsed_def.ty)
 
             op_def = OpDef(
-                name=name,
+                name=inner_def_name,
                 description=defn.__doc__ or "",
                 signature=OpDefSig(poly_func=ty.to_hugr_poly()),
                 lower_funcs=[
@@ -103,3 +133,22 @@ class CodeDefinition:
             self.guppy_module.__setattr__(inner_def_name, guppy_op)
 
         return self.guppy_module
+
+    def replace_inner_types(self, ty: FunctionType) -> FunctionType:
+        "Replace all InnerStructTypes with new outer type definitions"
+        for i, f_input in enumerate(ty.inputs):
+            if isinstance(f_input.ty, InnerStructType):
+                outer_type_def = self.outer_type_defs[f_input.ty.defn.id]
+
+                outer_type = outer_type_def.check_instantiate(f_input.ty.args)
+
+                ty.inputs[i] = FuncInput(ty=outer_type, flags=f_input.flags)
+
+        if isinstance(ty.output, InnerStructType):
+            outer_type_def = self.outer_type_defs[ty.output.defn.id]
+
+            outer_type = outer_type_def.check_instantiate(ty.output.args)
+
+            object.__setattr__(ty, "output", outer_type)
+
+        return ty
