@@ -2,7 +2,7 @@ import builtins
 import inspect
 from collections.abc import Callable
 from types import ModuleType
-from typing import Any, ClassVar, TypeVar
+from typing import Any, ClassVar, TypeVar, cast
 
 from guppylang.decorator import custom_guppy_decorator, get_calling_frame, guppy
 from guppylang.definition.common import DefId
@@ -73,21 +73,23 @@ class CodeDefinition:
                 type_def = TypeDef(
                     name=compiled_type.name,
                     description=compiled_type.description,
-                    params=compiled_type.params,
+                    params=cast("list[ht.TypeParam]", compiled_type.params),
                     bound=ExplicitBound(ht.TypeBound.Any),
                 )
 
                 self.hugr_ext.add_type_def(type_def)
 
                 outer_type_def = OpaqueTypeDef(
-                    DefId.fresh(),  # id
-                    compiled_type.name,  # name
-                    None,  # defined_at
-                    compiled_type.params,  # params
-                    not False,  # never_copyable
-                    not False,  # never_droppable
-                    lambda args: ht.ExtType(type_def=type_def, args=args),  # to_hugr
-                    ht.TypeBound.Any,  # bound
+                    DefId.fresh(),
+                    compiled_type.name,
+                    compiled_type.defined_at,
+                    compiled_type.params,
+                    True,
+                    True,
+                    lambda args: ht.ExtType(
+                        type_def=type_def, args=cast("list[ht.TypeArg]", args)
+                    ),
+                    ht.TypeBound.Any,
                 )
 
                 self.outer_type_defs[id] = outer_type_def
@@ -136,6 +138,7 @@ class CodeDefinition:
 
     def replace_inner_types(self, ty: FunctionType) -> FunctionType:
         "Replace all InnerStructTypes with new outer type definitions"
+        assert isinstance(ty.inputs, list)
         for i, f_input in enumerate(ty.inputs):
             if isinstance(f_input.ty, InnerStructType):
                 outer_type_def = self.outer_type_defs[f_input.ty.defn.id]
