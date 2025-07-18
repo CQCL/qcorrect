@@ -6,7 +6,7 @@ from guppylang.decorator import get_calling_frame, guppy
 from guppylang.error import GuppyError, GuppyTypeError
 from guppylang.std import quantum as phys
 from guppylang.std.builtins import array, comptime, nat, owned
-from hugr.package import ModulePointer
+from selene_hugr_qis_compiler import check_hugr
 
 import qcorrect as qct
 
@@ -52,7 +52,7 @@ def test_code_usage():
 
     hugr = main.compile()
 
-    assert isinstance(hugr, ModulePointer)
+    check_hugr(hugr.package.to_bytes())
 
 
 def test_mismatched_codes():
