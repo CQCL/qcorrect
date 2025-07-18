@@ -2,7 +2,7 @@ import builtins
 import inspect
 from collections.abc import Callable, Sequence
 from types import ModuleType
-from typing import Any, ClassVar, TypeVar, cast
+from typing import Any, ClassVar, TypeVar
 
 from guppylang.decorator import custom_guppy_decorator, get_calling_frame, guppy
 from guppylang.definition.common import DefId
@@ -74,7 +74,7 @@ class CodeDefinition:
                 type_def = TypeDef(
                     name=compiled_type.name,
                     description=compiled_type.description,
-                    params=cast("list[ht.TypeParam]", compiled_type.params),
+                    params=[p.to_hugr() for p in compiled_type.params],
                     bound=ExplicitBound(ht.TypeBound.Any),
                 )
 
