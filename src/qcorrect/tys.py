@@ -41,8 +41,8 @@ class RawInnerStructDef(RawStructDef):
             self.name,
             None,
             [],
-            not False,  # copyable
-            not False,  # droppable
+            True,  # copyable
+            True,  # droppable
             lambda _: ht.ExtType(type_def=type_def, args=[]),
             None,
         )
