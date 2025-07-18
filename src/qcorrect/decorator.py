@@ -1,6 +1,6 @@
 import builtins
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from types import ModuleType
 from typing import Any, ClassVar, TypeVar, cast
 
@@ -10,6 +10,7 @@ from guppylang.definition.function import ParsedFunctionDef
 from guppylang.definition.ty import OpaqueTypeDef
 from guppylang.engine import DEF_STORE, ENGINE
 from guppylang.tracing.object import GuppyDefinition
+from guppylang.tys.arg import Argument
 from guppylang.tys.subst import Inst
 from guppylang.tys.ty import FuncInput, FunctionType
 from hugr import ext as he
@@ -79,6 +80,14 @@ class CodeDefinition:
 
                 self.hugr_ext.add_type_def(type_def)
 
+                def to_hugr_gen(type_def) -> Callable[[Sequence[Argument]], ht.Type]:
+                    def to_hugr(args: Sequence[Argument]) -> ht.Type:
+                        return ht.ExtType(
+                            type_def=type_def, args=[arg.to_hugr() for arg in args]
+                        )
+
+                    return to_hugr
+
                 outer_type_def = OpaqueTypeDef(
                     DefId.fresh(),
                     compiled_type.name,
@@ -86,9 +95,7 @@ class CodeDefinition:
                     compiled_type.params,
                     True,
                     True,
-                    lambda args: ht.ExtType(
-                        type_def=type_def, args=cast("list[ht.TypeArg]", args)
-                    ),
+                    to_hugr_gen(type_def),
                     ht.TypeBound.Any,
                 )
 
@@ -101,7 +108,6 @@ class CodeDefinition:
             parsed_def = ENGINE.get_parsed(inner_id)
 
             assert isinstance(parsed_def, ParsedFunctionDef)
-
             ty = self.replace_inner_types(parsed_def.ty)
 
             op_def = OpDef(
