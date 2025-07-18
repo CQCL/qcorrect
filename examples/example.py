@@ -31,6 +31,18 @@ class CodeDef(qct.CodeDefinition):
         return circuit
 
     @qct.operation
+    def cx(self) -> Callable:
+        @guppy
+        @no_type_check
+        def circuit(
+            ctl: "CodeBlock[comptime(self.n)]", tgt: "CodeBlock[comptime(self.n)]"
+        ) -> None:
+            for i in range(comptime(self.n)):
+                phys.cx(ctl.data_qs[i], tgt.data_qs[i])
+
+        return circuit
+
+    @qct.operation
     def measure(self) -> Callable:
         @guppy
         @no_type_check
@@ -49,8 +61,11 @@ code = CodeDef(5).get_module()
 # Write logical guppy program
 @guppy
 def main() -> None:
-    q = code.zero()
-    code.measure(q)
+    q0 = code.zero()
+    q1 = code.zero()
+    code.cx(q0, q1)
+    code.measure(q0)
+    code.measure(q1)
 
 
 hugr = main.compile()
