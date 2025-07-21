@@ -58,14 +58,25 @@ class CodeDefinition:
         self.hugr_ext = Extension(self.__class__.__name__, SemanticVersion(0, 1, 0))
         self.qct_types: dict[str, GuppyDefinition] = {}
         self.outer_type_defs: dict[DefId, OpaqueTypeDef] = {}
+        self.outer_type_ids: set[DefId] = set()
 
         # Compile all `inner` operations
         for name, defn in inspect.getmembers(self):
             if hasattr(defn, "_qct_op"):
-                self.compiled_defs[name] = defn().id, guppy.compile(defn())
+                guppy_defn = defn()
+                self.compiled_defs[name] = guppy_defn.id, guppy.compile(guppy_defn)
+
+                # Find all `InnerStructType` used to replace with outer types
+                parsed_defn = ENGINE.get_parsed(guppy_defn.id)
+
+                assert isinstance(parsed_defn, ParsedFunctionDef)
+
+                for arg in parsed_defn.ty.args:
+                    if isinstance(arg.ty, InnerStructType):
+                        self.outer_type_ids.add(arg.ty.defn.id)
 
         # Find all RawInnerStructDef
-        for id in DEF_STORE.raw_defs:
+        for id in self.outer_type_ids:
             if isinstance(DEF_STORE.raw_defs[id], RawInnerStructDef):
                 compiled_type = ENGINE.compiled[id]
 
