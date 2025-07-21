@@ -13,7 +13,7 @@ import qcorrect as qct
 N = guppy.nat_var("N")
 
 
-@qct.type
+@qct.block
 class CodeBlock(Generic[N]):
     data_qs: array[phys.qubit, N]
 
