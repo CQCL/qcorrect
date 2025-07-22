@@ -1,33 +1,31 @@
 import builtins
 import inspect
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from types import ModuleType
 from typing import Any, ClassVar, TypeVar
 
 from guppylang.decorator import custom_guppy_decorator, get_calling_frame, guppy
 from guppylang.definition.common import DefId
 from guppylang.definition.function import ParsedFunctionDef
-from guppylang.definition.ty import OpaqueTypeDef
 from guppylang.engine import DEF_STORE, ENGINE
 from guppylang.tracing.object import GuppyDefinition
-from guppylang.tys.arg import Argument
 from guppylang.tys.subst import Inst
 from guppylang.tys.ty import FuncInput, FunctionType
 from hugr import ext as he
 from hugr import ops
 from hugr import tys as ht
-from hugr.ext import ExplicitBound, Extension, OpDef, OpDefSig, TypeDef
+from hugr.ext import Extension, OpDef, OpDefSig
 from hugr.package import ModulePointer
 from pydantic_extra_types.semantic_version import SemanticVersion
 
-from qcorrect.tys import CheckedInnerStructDef, InnerStructType, RawInnerStructDef
+from qcorrect.tys import InnerStructType, RawInnerStructDef
 
 T = TypeVar("T")
 F = TypeVar("F", bound=Callable[..., Any])
 
 
 @custom_guppy_decorator
-def type(cls: builtins.type[T]) -> builtins.type[T]:
+def block(cls: builtins.type[T]) -> builtins.type[T]:
     defn = RawInnerStructDef(DefId.fresh(), cls.__name__, None, cls)
     DEF_STORE.register_def(defn, get_calling_frame())
     for val in cls.__dict__.values():
@@ -42,7 +40,7 @@ def type(cls: builtins.type[T]) -> builtins.type[T]:
 def operation(defn: F) -> F:
     """Decorator to define code operations"""
 
-    defn.__setattr__("_qct_op", True)
+    defn.__setattr__("__qct_op__", True)
 
     return defn
 
@@ -56,50 +54,12 @@ class CodeDefinition:
     def get_module(self) -> ModuleType:
         self.guppy_module = ModuleType(self.__class__.__name__)
         self.hugr_ext = Extension(self.__class__.__name__, SemanticVersion(0, 1, 0))
-        self.qct_types: dict[str, GuppyDefinition] = {}
-        self.outer_type_defs: dict[DefId, OpaqueTypeDef] = {}
 
         # Compile all `inner` operations
         for name, defn in inspect.getmembers(self):
-            if hasattr(defn, "_qct_op"):
-                self.compiled_defs[name] = defn().id, guppy.compile(defn())
-
-        # Find all RawInnerStructDef
-        for id in DEF_STORE.raw_defs:
-            if isinstance(DEF_STORE.raw_defs[id], RawInnerStructDef):
-                compiled_type = ENGINE.compiled[id]
-
-                assert isinstance(compiled_type, CheckedInnerStructDef)
-
-                type_def = TypeDef(
-                    name=compiled_type.name,
-                    description=compiled_type.description,
-                    params=[p.to_hugr() for p in compiled_type.params],
-                    bound=ExplicitBound(ht.TypeBound.Any),
-                )
-
-                self.hugr_ext.add_type_def(type_def)
-
-                def to_hugr_gen(type_def) -> Callable[[Sequence[Argument]], ht.Type]:
-                    def to_hugr(args: Sequence[Argument]) -> ht.Type:
-                        return ht.ExtType(
-                            type_def=type_def, args=[arg.to_hugr() for arg in args]
-                        )
-
-                    return to_hugr
-
-                outer_type_def = OpaqueTypeDef(
-                    DefId.fresh(),
-                    compiled_type.name,
-                    compiled_type.defined_at,
-                    compiled_type.params,
-                    True,
-                    True,
-                    to_hugr_gen(type_def),
-                    ht.TypeBound.Any,
-                )
-
-                self.outer_type_defs[id] = outer_type_def
+            if hasattr(defn, "__qct_op__"):
+                guppy_defn = defn()
+                self.compiled_defs[name] = guppy_defn.id, guppy.compile(guppy_defn)
 
         # Define new `outer` operations
         for inner_def_name in self.compiled_defs:
@@ -126,7 +86,9 @@ class CodeDefinition:
 
             def empty_dec() -> None: ...
 
-            def hugr_op(op_def):
+            def hugr_op(
+                op_def: OpDef,
+            ) -> Callable[[ht.FunctionType, Inst], ops.DataflowOp]:
                 def op(ty: ht.FunctionType, inst: Inst) -> ops.DataflowOp:
                     return ops.ExtOp(op_def, ty)
 
@@ -147,17 +109,82 @@ class CodeDefinition:
         assert isinstance(ty.inputs, list)
         for i, f_input in enumerate(ty.inputs):
             if isinstance(f_input.ty, InnerStructType):
-                outer_type_def = self.outer_type_defs[f_input.ty.defn.id]
-
-                outer_type = outer_type_def.check_instantiate(f_input.ty.args)
+                outer_type = f_input.ty.outer_type
+                self.hugr_ext.add_type_def(f_input.ty.hugr_type_def)
 
                 ty.inputs[i] = FuncInput(ty=outer_type, flags=f_input.flags)
 
         if isinstance(ty.output, InnerStructType):
-            outer_type_def = self.outer_type_defs[ty.output.defn.id]
-
-            outer_type = outer_type_def.check_instantiate(ty.output.args)
+            outer_type = ty.output.outer_type
+            self.hugr_ext.add_type_def(ty.output.hugr_type_def)
 
             object.__setattr__(ty, "output", outer_type)
 
-        return ty
+        ty_outer = FunctionType(
+            inputs=ty.inputs,
+            output=ty.output,
+            input_names=ty.input_names,
+            params=ty.params,
+            comptime_args=ty.comptime_args,
+        )
+
+        return ty_outer
+
+    def lower(self, package: ModulePointer) -> ModulePointer:
+        # Find all nodes to replace
+        nodes_to_replace = [
+            (node, data)
+            for node, data in package.module.nodes()
+            if isinstance(data.op, ops.ExtOp)
+        ]
+
+        # Add all lowering functions
+        func_defn_node = {}
+
+        for f_name, op in self.hugr_ext.operations.items():
+            lower_hugr = op.lower_funcs[0].hugr
+            lower_hugr[ops.Node(1)].op.f_name = f_name # TODO: update name
+            lower_hugr.delete_node(ops.Node(0))
+            lower_hugr.module_root = ops.Node(1)
+            lower_hugr.entrypoint = ops.Node(1)
+
+            defn_nodes = package.module.insert_hugr(
+                lower_hugr, package.module.module_root
+            )
+
+            func_defn_node[f_name] = defn_nodes[ops.Node(1)]
+
+        # Replace all outer ops with calls to lowering functions
+        for node, data in nodes_to_replace:
+            if isinstance(data.op, ops.ExtOp):
+                op_name = data.op.op_def().name
+
+                op_sig = self.hugr_ext.get_op(op_name).signature.poly_func
+                op_ports_in = [port for _, port in package.module.incoming_links(node)]
+                op_ports_out = [port for _, port in package.module.outgoing_links(node)]
+
+                assert isinstance(op_sig, ht.PolyFuncType)
+
+                func_call = ops.Call(signature=op_sig)
+
+                # Remove outer node
+                package.module.delete_node(node)
+
+                call_node = package.module.add_node(
+                    func_call, data.parent, len(op_ports_out)
+                )
+
+                package.module.add_link(
+                    func_defn_node[op_name].out(0),
+                    call_node.inp(func_call._function_port_offset()),
+                )
+
+                # Link nodes
+                for i, ports in enumerate(op_ports_in):
+                    for p in ports:
+                        package.module.add_link(p, call_node.inp(i))
+                for i, ports in enumerate(op_ports_out):
+                    for p in ports:
+                        package.module.add_link(call_node.out(i), p)
+
+        return package
