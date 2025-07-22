@@ -26,7 +26,7 @@ class RawInnerStructDef(RawStructDef):
             bound=ExplicitBound(ht.TypeBound.Any),
         )
 
-        def to_hugr_gen(type_def) -> Callable[[Sequence[Argument]], ht.Type]:
+        def to_hugr_gen(type_def: TypeDef) -> Callable[[Sequence[Argument]], ht.Type]:
             def to_hugr(args: Sequence[Argument]) -> ht.Type:
                 return ht.ExtType(
                     type_def=type_def, args=[arg.to_hugr() for arg in args]

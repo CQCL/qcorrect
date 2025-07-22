@@ -86,7 +86,9 @@ class CodeDefinition:
 
             def empty_dec() -> None: ...
 
-            def hugr_op(op_def):
+            def hugr_op(
+                op_def: OpDef,
+            ) -> Callable[[ht.FunctionType, Inst], ops.DataflowOp]:
                 def op(ty: ht.FunctionType, inst: Inst) -> ops.DataflowOp:
                     return ops.ExtOp(op_def, ty)
 
@@ -127,3 +129,62 @@ class CodeDefinition:
         )
 
         return ty_outer
+
+    def lower(self, package: ModulePointer) -> ModulePointer:
+        # Find all nodes to replace
+        nodes_to_replace = [
+            (node, data)
+            for node, data in package.module.nodes()
+            if isinstance(data.op, ops.ExtOp)
+        ]
+
+        # Add all lowering functions
+        func_defn_node = {}
+
+        for f_name, op in self.hugr_ext.operations.items():
+            lower_hugr = op.lower_funcs[0].hugr
+            lower_hugr[ops.Node(1)].op.f_name = f_name # TODO: update name
+            lower_hugr.delete_node(ops.Node(0))
+            lower_hugr.module_root = ops.Node(1)
+            lower_hugr.entrypoint = ops.Node(1)
+
+            defn_nodes = package.module.insert_hugr(
+                lower_hugr, package.module.module_root
+            )
+
+            func_defn_node[f_name] = defn_nodes[ops.Node(1)]
+
+        # Replace all outer ops with calls to lowering functions
+        for node, data in nodes_to_replace:
+            if isinstance(data.op, ops.ExtOp):
+                op_name = data.op.op_def().name
+
+                op_sig = self.hugr_ext.get_op(op_name).signature.poly_func
+                op_ports_in = [port for _, port in package.module.incoming_links(node)]
+                op_ports_out = [port for _, port in package.module.outgoing_links(node)]
+
+                assert isinstance(op_sig, ht.PolyFuncType)
+
+                func_call = ops.Call(signature=op_sig)
+
+                # Remove outer node
+                package.module.delete_node(node)
+
+                call_node = package.module.add_node(
+                    func_call, data.parent, len(op_ports_out)
+                )
+
+                package.module.add_link(
+                    func_defn_node[op_name].out(0),
+                    call_node.inp(func_call._function_port_offset()),
+                )
+
+                # Link nodes
+                for i, ports in enumerate(op_ports_in):
+                    for p in ports:
+                        package.module.add_link(p, call_node.inp(i))
+                for i, ports in enumerate(op_ports_out):
+                    for p in ports:
+                        package.module.add_link(call_node.out(i), p)
+
+        return package

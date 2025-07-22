@@ -55,7 +55,9 @@ class CodeDef(qct.CodeDefinition):
 
 
 # Create code instance and get guppy module
-code = CodeDef(5).get_module()
+code_def = CodeDef(5)
+
+code = code_def.get_module()
 
 
 # Write logical guppy program
@@ -69,3 +71,5 @@ def main() -> None:
 
 
 hugr = main.compile()
+
+hugr = code_def.lower(hugr)
