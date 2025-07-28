@@ -43,6 +43,15 @@ class CodeDef(qct.CodeDefinition):
         return circuit
 
     @qct.operation
+    def cx_intra_block(self) -> Callable:
+        @guppy
+        @no_type_check
+        def circuit(qb: "CodeBlock[comptime(self.n)]", ctl: int, tgt: int) -> None:
+            phys.cx(qb.data_qs[ctl], qb.data_qs[tgt])
+
+        return circuit
+
+    @qct.operation
     def measure(self) -> Callable:
         @guppy
         @no_type_check
@@ -66,6 +75,7 @@ def main() -> None:
     q0 = code.zero()
     q1 = code.zero()
     code.cx(q0, q1)
+    code.cx_intra_block(q0, 0, 1)
     code.measure(q0)
     code.measure(q1)
 

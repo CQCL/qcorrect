@@ -2,7 +2,7 @@ import builtins
 import inspect
 from collections.abc import Callable
 from types import ModuleType
-from typing import Any, ClassVar, TypeVar
+from typing import Any, ClassVar, Self, TypeVar
 
 from guppylang.decorator import custom_guppy_decorator, get_calling_frame, guppy
 from guppylang.definition.common import DefId
@@ -51,7 +51,7 @@ class CodeDefinition:
     compiled_defs: ClassVar[dict[str, tuple[DefId, ModulePointer]]] = {}
 
     @custom_guppy_decorator
-    def get_module(self) -> ModuleType:
+    def get_module(self: Self) -> ModuleType:
         self.guppy_module = ModuleType(self.__class__.__name__)
         self.hugr_ext = Extension(self.__class__.__name__, SemanticVersion(0, 1, 0))
 
@@ -143,7 +143,8 @@ class CodeDefinition:
 
         for f_name, op in self.hugr_ext.operations.items():
             lower_hugr = op.lower_funcs[0].hugr
-            lower_hugr[ops.Node(1)].op.f_name = f_name # TODO: update name
+            lower_hugr[ops.Node(1)].op.f_name = f_name  # Update function name
+            # Delete the module root and change to function definition
             lower_hugr.delete_node(ops.Node(0))
             lower_hugr.module_root = ops.Node(1)
             lower_hugr.entrypoint = ops.Node(1)
