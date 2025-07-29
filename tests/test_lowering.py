@@ -1,7 +1,6 @@
 from collections.abc import Callable
 from typing import Generic
 
-import pytest
 from guppylang.decorator import guppy
 from guppylang.std import quantum as phys
 from guppylang.std.builtins import array, comptime, nat, owned
@@ -41,33 +40,52 @@ class CodeDef(qct.CodeDefinition):
 
 phys_n = 5
 
+
 @guppy
-def zero() -> "CodeBlock[comptime(phys_n)]":
+def phys_zero() -> "CodeBlock[comptime(phys_n)]":
     return CodeBlock(array(phys.qubit() for _ in range(comptime(phys_n))))
 
 
 @guppy
-def measure(
+def phys_measure(
     q: "CodeBlock[comptime(phys_n)] @ owned",
 ) -> "array[bool, comptime(phys_n)]":
     return phys.measure_array(q.data_qs)
 
 
 def test_lowering():
-    code = CodeDef(5).get_module()
+    code_def = CodeDef(5)
+
+    code = code_def.get_module()
 
     @guppy
     def main() -> None:
         q = code.zero()
         code.measure(q)
 
-    qct_hugr = main.compile()
+    qct_hugr = code_def.lower(main.compile())
+
+    @guppy
+    def phys_main() -> None:
+        q = phys_zero()
+        phys_measure(q)
+
+    phys_hugr = phys_main.compile()
+
+    # TODO: Check qct_hugr matches phys_hugr
+
+
+def test_phys_and_code_operations():
+    code_def = CodeDef(5)
+
+    code = code_def.get_module()
 
     @guppy
     def main() -> None:
-        q = zero()
-        measure(q)
+        q_block = code.zero()
+        phys_qubit = phys.qubit()
 
-    phys_hugr = main.compile()
+        code.measure(q_block)
+        phys.measure(phys_qubit)
 
-    # TODO: Check qct_hugr matches phys_hugr
+    code_def.lower(main.compile())
