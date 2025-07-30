@@ -37,7 +37,7 @@ class RawInnerStructDef(RawStructDef):
         outer_type_defn = OpaqueTypeDef(
             DefId.fresh(),
             parsed_struct_def.name,
-            parsed_struct_def.defined_at,
+            None,
             parsed_struct_def.params,
             True,
             True,

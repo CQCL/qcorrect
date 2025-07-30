@@ -52,6 +52,9 @@ class CodeDefinition:
 
     @custom_guppy_decorator
     def get_module(self: Self) -> ModuleType:
+        """Get guppy module for code definition instance. Code definitions are compiled
+        and new `outer` operations are defined. Returns a Module with `outer` definitions
+        that can be used in guppy programs."""
         self.guppy_module = ModuleType(self.__class__.__name__)
         self.hugr_ext = Extension(self.__class__.__name__, SemanticVersion(0, 1, 0))
 
@@ -59,7 +62,18 @@ class CodeDefinition:
         for name, defn in inspect.getmembers(self):
             if hasattr(defn, "__qct_op__"):
                 guppy_defn = defn()
-                self.compiled_defs[name] = guppy_defn.id, guppy.compile(guppy_defn)
+
+                compiled_hugr = guppy.compile(guppy_defn)
+
+                # Update FuncDefn name
+                for _, data in compiled_hugr.module.nodes():
+                    if (
+                        isinstance(data.op, ops.FuncDefn)
+                        and data.op.f_name == guppy_defn.wrapped.name
+                    ):
+                        data.op.f_name = name
+
+                self.compiled_defs[name] = guppy_defn.id, compiled_hugr
 
         # Define new `outer` operations
         for inner_def_name in self.compiled_defs:
@@ -68,7 +82,7 @@ class CodeDefinition:
             parsed_def = ENGINE.get_parsed(inner_id)
 
             assert isinstance(parsed_def, ParsedFunctionDef)
-            ty = self.replace_inner_types(parsed_def.ty)
+            ty = self.define_inner_type_sig(parsed_def.ty)
 
             op_def = OpDef(
                 name=inner_def_name,
@@ -104,88 +118,124 @@ class CodeDefinition:
 
         return self.guppy_module
 
-    def replace_inner_types(self, ty: FunctionType) -> FunctionType:
-        "Replace all InnerStructTypes with new outer type definitions"
-        assert isinstance(ty.inputs, list)
-        for i, f_input in enumerate(ty.inputs):
+    def define_inner_type_sig(self, ty: FunctionType) -> FunctionType:
+        """Define a new FunctionType that will be the signature of the `outer`
+        operations.
+
+        The function loops through all inputs/output types and replaces any
+        InnerStructTypes with outer type definitions. All other types are unchanged."""
+
+        outer_inputs = []
+
+        for f_input in ty.inputs:
             if isinstance(f_input.ty, InnerStructType):
                 outer_type = f_input.ty.outer_type
                 self.hugr_ext.add_type_def(f_input.ty.hugr_type_def)
 
-                ty.inputs[i] = FuncInput(ty=outer_type, flags=f_input.flags)
+                outer_inputs.append(FuncInput(ty=outer_type, flags=f_input.flags))
+            else:
+                outer_inputs.append(f_input)
 
         if isinstance(ty.output, InnerStructType):
             outer_type = ty.output.outer_type
             self.hugr_ext.add_type_def(ty.output.hugr_type_def)
 
-            object.__setattr__(ty, "output", outer_type)
+            outer_output = outer_type
+        else:
+            outer_output = ty.output
 
-        ty_outer = FunctionType(
-            inputs=ty.inputs,
-            output=ty.output,
+        return FunctionType(
+            inputs=outer_inputs,
+            output=outer_output,
             input_names=ty.input_names,
             params=ty.params,
             comptime_args=ty.comptime_args,
         )
 
-        return ty_outer
-
     def lower(self, package: ModulePointer) -> ModulePointer:
+        """Function to lower from `outer` operations to `inner`.
+
+        Any `outer` operations are replace with calls to function definitions defined
+        in the hugr extension from the code.
+        """
+
         # Find all nodes to replace
         nodes_to_replace = [
-            (node, data)
+            (node, data, data.op.op_def().name)
             for node, data in package.module.nodes()
             if isinstance(data.op, ops.ExtOp)
+            and data.op.op_def().name in self.hugr_ext.operations
         ]
 
         # Add all lowering functions
         func_defn_node = {}
 
         for f_name, op in self.hugr_ext.operations.items():
-            lower_hugr = op.lower_funcs[0].hugr
-            lower_hugr[ops.Node(1)].op.f_name = f_name  # Update function name
-            # Delete the module root and change to function definition
-            lower_hugr.delete_node(ops.Node(0))
-            lower_hugr.module_root = ops.Node(1)
-            lower_hugr.entrypoint = ops.Node(1)
+            for lower_funcs in op.lower_funcs:
+                lower_hugr = lower_funcs.hugr
 
-            defn_nodes = package.module.insert_hugr(
-                lower_hugr, package.module.module_root
-            )
+                # Delete the module root and change to function definition
+                assert isinstance(lower_hugr[lower_hugr.module_root].op, ops.Module)
+                assert lower_hugr[lower_hugr.module_root].metadata["name"] == "__main__"
 
-            func_defn_node[f_name] = defn_nodes[ops.Node(1)]
+                # Find node for the function definition
+                try:
+                    func_node = next(
+                        node
+                        for node, data in lower_hugr.nodes()
+                        if isinstance(data.op, ops.FuncDefn)
+                        and data.op.f_name == f_name
+                    )
+                except StopIteration as e:
+                    raise NameError(
+                        f"Function Definition ({f_name}) not found in hugr."
+                    ) from e
+
+                defn_nodes = package.module.insert_hugr(
+                    lower_hugr, package.module.module_root
+                )
+
+                # Get new node locations
+                func_defn_node[f_name] = defn_nodes[func_node]
+                new_module_entry = defn_nodes[lower_hugr.module_root]
+
+                # Update parent/children
+                for node in list(package.module[new_module_entry].children):
+                    package.module[node].parent = package.module.module_root
+                    package.module[package.module.module_root].children.append(node)
+                    package.module[new_module_entry].children.remove(node)
+
+                # Delete original entrypoint
+                package.module.delete_node(new_module_entry)
 
         # Replace all outer ops with calls to lowering functions
-        for node, data in nodes_to_replace:
-            if isinstance(data.op, ops.ExtOp):
-                op_name = data.op.op_def().name
+        for node, data, op_name in nodes_to_replace:
+            op_sig = self.hugr_ext.get_op(op_name).signature.poly_func
+            op_ports_in = [port for _, port in package.module.incoming_links(node)]
+            op_ports_out = [port for _, port in package.module.outgoing_links(node)]
 
-                op_sig = self.hugr_ext.get_op(op_name).signature.poly_func
-                op_ports_in = [port for _, port in package.module.incoming_links(node)]
-                op_ports_out = [port for _, port in package.module.outgoing_links(node)]
+            assert isinstance(op_sig, ht.PolyFuncType)
 
-                assert isinstance(op_sig, ht.PolyFuncType)
+            func_call = ops.Call(signature=op_sig)
 
-                func_call = ops.Call(signature=op_sig)
+            # Remove outer node
+            package.module.delete_node(node)
 
-                # Remove outer node
-                package.module.delete_node(node)
+            call_node = package.module.add_node(
+                func_call, data.parent, len(op_ports_out)
+            )
 
-                call_node = package.module.add_node(
-                    func_call, data.parent, len(op_ports_out)
-                )
+            package.module.add_link(
+                func_defn_node[op_name].out(0),
+                call_node.inp(func_call._function_port_offset()),
+            )
 
-                package.module.add_link(
-                    func_defn_node[op_name].out(0),
-                    call_node.inp(func_call._function_port_offset()),
-                )
-
-                # Link nodes
-                for i, ports in enumerate(op_ports_in):
-                    for p in ports:
-                        package.module.add_link(p, call_node.inp(i))
-                for i, ports in enumerate(op_ports_out):
-                    for p in ports:
-                        package.module.add_link(call_node.out(i), p)
+            # Link nodes
+            for i, ports in enumerate(op_ports_in):
+                for p in ports:
+                    package.module.add_link(p, call_node.inp(i))
+            for i, ports in enumerate(op_ports_out):
+                for p in ports:
+                    package.module.add_link(call_node.out(i), p)
 
         return package

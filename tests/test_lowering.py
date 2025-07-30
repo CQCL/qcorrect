@@ -38,23 +38,20 @@ class CodeDef(qct.CodeDefinition):
         return circuit
 
 
-phys_n = 5
-
-
-@guppy
-def phys_zero() -> "CodeBlock[comptime(phys_n)]":
-    return CodeBlock(array(phys.qubit() for _ in range(comptime(phys_n))))
-
-
-@guppy
-def phys_measure(
-    q: "CodeBlock[comptime(phys_n)] @ owned",
-) -> "array[bool, comptime(phys_n)]":
-    return phys.measure_array(q.data_qs)
-
-
 def test_lowering():
-    code_def = CodeDef(5)
+    n = 5
+
+    @guppy
+    def phys_zero() -> "CodeBlock[comptime(n)]":
+        return CodeBlock(array(phys.qubit() for _ in range(comptime(n))))
+
+    @guppy
+    def phys_measure(
+        q: "CodeBlock[comptime(n)] @ owned",
+    ) -> "array[bool, comptime(n)]":
+        return phys.measure_array(q.data_qs)
+
+    code_def = CodeDef(n)
 
     code = code_def.get_module()
 
@@ -67,8 +64,7 @@ def test_lowering():
 
     @guppy
     def phys_main() -> None:
-        q = phys_zero()
-        phys_measure(q)
+        phys_measure(phys_zero())
 
     phys_hugr = phys_main.compile()
 
