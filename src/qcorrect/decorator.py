@@ -53,8 +53,8 @@ class CodeDefinition:
     @custom_guppy_decorator
     def get_module(self: Self) -> ModuleType:
         """Get guppy module for code definition instance. Code definitions are compiled
-        and new `outer` operations are defined. Returns a Module with `outer` definitions
-        that can be used in guppy programs."""
+        and new `outer` operations are defined. Returns a Module with `outer`
+        definitions that can be used in guppy programs."""
         self.guppy_module = ModuleType(self.__class__.__name__)
         self.hugr_ext = Extension(self.__class__.__name__, SemanticVersion(0, 1, 0))
 
