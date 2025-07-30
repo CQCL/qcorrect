@@ -42,11 +42,11 @@ def test_lowering():
     n = 5
 
     @guppy
-    def phys_zero() -> "CodeBlock[comptime(n)]":
+    def zero() -> "CodeBlock[comptime(n)]":
         return CodeBlock(array(phys.qubit() for _ in range(comptime(n))))
 
     @guppy
-    def phys_measure(
+    def measure(
         q: "CodeBlock[comptime(n)] @ owned",
     ) -> "array[bool, comptime(n)]":
         return phys.measure_array(q.data_qs)
@@ -62,13 +62,22 @@ def test_lowering():
 
     qct_hugr = code_def.lower(main.compile())
 
+    qct_node_names = {data.op.name() for _, data in qct_hugr.module.nodes()}
+
     @guppy
-    def phys_main() -> None:
-        phys_measure(phys_zero())
+    def main() -> None:
+        q = zero()
+        measure(q)
 
-    phys_hugr = phys_main.compile()
+    phys_hugr = main.compile()
 
-    # TODO: Check qct_hugr matches phys_hugr
+    phys_node_names = {data.op.name() for _, data in phys_hugr.module.nodes()}
+
+    # We are testing that the set of names matches between the hugr modules
+    # Future tests should be more comprehensive but we are currently limited by
+    # how `insert_hugr` and builtin functions being inserted twice. This should
+    # be fixed in the future with hugr linking.
+    assert qct_node_names == phys_node_names
 
 
 def test_phys_and_code_operations():

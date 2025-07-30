@@ -104,7 +104,7 @@ class CodeDefinition:
                 op_def: OpDef,
             ) -> Callable[[ht.FunctionType, Inst], ops.DataflowOp]:
                 def op(ty: ht.FunctionType, inst: Inst) -> ops.DataflowOp:
-                    return ops.ExtOp(op_def, ty)
+                    return ops.ExtOp(op_def, ty, [arg.to_hugr() for arg in inst])
 
                 return op
 
