@@ -1,15 +1,20 @@
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
-from guppylang.ast_util import AstNode
-from guppylang.checker.core import Globals
-from guppylang.definition.common import DefId
-from guppylang.definition.struct import CheckedStructDef, ParsedStructDef, RawStructDef
-from guppylang.definition.ty import OpaqueTypeDef
-from guppylang.engine import DEF_STORE
-from guppylang.span import SourceMap
-from guppylang.tys.arg import Argument
-from guppylang.tys.ty import OpaqueType, StructType
+from guppylang_internals.ast_util import AstNode
+from guppylang_internals.checker.core import Globals
+from guppylang_internals.definition.common import DefId
+from guppylang_internals.definition.struct import (
+    CheckedStructDef,
+    ParsedStructDef,
+    RawStructDef,
+)
+from guppylang_internals.definition.ty import OpaqueTypeDef
+from guppylang_internals.engine import DEF_STORE
+from guppylang_internals.span import SourceMap
+from guppylang_internals.tys.arg import Argument
+from guppylang_internals.tys.common import ToHugrContext
+from guppylang_internals.tys.ty import OpaqueType, StructType
 from hugr import tys as ht
 from hugr.ext import ExplicitBound, TypeDef
 
@@ -22,14 +27,16 @@ class RawInnerStructDef(RawStructDef):
         hugr_type_def = TypeDef(
             name=parsed_struct_def.name,
             description=parsed_struct_def.description,
-            params=[p.to_hugr() for p in parsed_struct_def.params],
-            bound=ExplicitBound(ht.TypeBound.Any),
+            params=[],
+            bound=ExplicitBound(ht.TypeBound.Linear),
         )
 
-        def to_hugr_gen(type_def: TypeDef) -> Callable[[Sequence[Argument]], ht.Type]:
-            def to_hugr(args: Sequence[Argument]) -> ht.Type:
+        def to_hugr_gen(
+            type_def,
+        ) -> Callable[[Sequence[Argument], ToHugrContext], ht.Type]:
+            def to_hugr(args: Sequence[Argument], ctx: ToHugrContext) -> ht.Type:
                 return ht.ExtType(
-                    type_def=type_def, args=[arg.to_hugr() for arg in args]
+                    type_def=type_def, args=[arg.to_hugr(ctx) for arg in args]
                 )
 
             return to_hugr
@@ -42,7 +49,7 @@ class RawInnerStructDef(RawStructDef):
             True,
             True,
             to_hugr_gen(hugr_type_def),
-            ht.TypeBound.Any,
+            ht.TypeBound.Linear,
         )
 
         return ParsedInnerStructDef(
@@ -86,7 +93,7 @@ class ParsedInnerStructDef(ParsedStructDef):
 
     def check_instantiate(
         self, args: Sequence[Argument], loc: AstNode | None = None
-    ) -> "InnerStructType":
+    ) -> InnerStructType:
         super().check_instantiate(args, loc)
 
         globals = Globals(DEF_STORE.frames[self.id])

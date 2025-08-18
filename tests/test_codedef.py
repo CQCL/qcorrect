@@ -3,10 +3,10 @@ from typing import Generic
 
 import pytest
 from guppylang.decorator import get_calling_frame, guppy
-from guppylang.error import GuppyError, GuppyTypeError
 from guppylang.std import quantum as phys
 from guppylang.std.builtins import array, comptime, nat, owned
-from hugr.package import ModulePointer
+from guppylang_internals.error import GuppyError, GuppyTypeError
+from hugr.package import Package
 
 import qcorrect as qct
 
@@ -52,7 +52,7 @@ def test_code_usage():
 
     hugr = main.compile()
 
-    assert isinstance(hugr, ModulePointer)
+    assert isinstance(hugr, Package)
 
 
 def test_mismatched_codes():

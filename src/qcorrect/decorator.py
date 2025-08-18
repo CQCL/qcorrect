@@ -4,18 +4,20 @@ from collections.abc import Callable
 from types import ModuleType
 from typing import Any, ClassVar, Self, TypeVar
 
-from guppylang.decorator import custom_guppy_decorator, get_calling_frame, guppy
-from guppylang.definition.common import DefId
-from guppylang.definition.function import ParsedFunctionDef
-from guppylang.engine import DEF_STORE, ENGINE
-from guppylang.tracing.object import GuppyDefinition
-from guppylang.tys.subst import Inst
-from guppylang.tys.ty import FuncInput, FunctionType
+from guppylang.decorator import custom_guppy_decorator, get_calling_frame
+from guppylang.defs import GuppyDefinition
+from guppylang_internals.compiler.core import CompilerContext
+from guppylang_internals.decorator import hugr_op
+from guppylang_internals.definition.common import DefId
+from guppylang_internals.definition.function import ParsedFunctionDef
+from guppylang_internals.engine import DEF_STORE, ENGINE
+from guppylang_internals.tys.subst import Inst
+from guppylang_internals.tys.ty import FuncInput, FunctionType
 from hugr import ext as he
 from hugr import ops
 from hugr import tys as ht
 from hugr.ext import Extension, OpDef, OpDefSig
-from hugr.package import ModulePointer
+from hugr.package import Package
 from pydantic_extra_types.semantic_version import SemanticVersion
 
 from qcorrect.tys import InnerStructType, RawInnerStructDef
@@ -48,7 +50,7 @@ def operation(defn: F) -> F:
 class CodeDefinition:
     guppy_module: ModuleType
     hugr_ext: Extension
-    compiled_defs: ClassVar[dict[str, tuple[DefId, ModulePointer]]] = {}
+    compiled_defs: ClassVar[dict[str, tuple[DefId, Package]]] = {}
 
     @custom_guppy_decorator
     def get_module(self: Self) -> ModuleType:
@@ -62,54 +64,57 @@ class CodeDefinition:
         for name, defn in inspect.getmembers(self):
             if hasattr(defn, "__qct_op__"):
                 guppy_defn = defn()
-
-                compiled_hugr = guppy.compile(guppy_defn)
+                compiled_hugr = guppy_defn.compile()
 
                 # Update FuncDefn name
-                for _, data in compiled_hugr.module.nodes():
-                    if (
-                        isinstance(data.op, ops.FuncDefn)
-                        and data.op.f_name == guppy_defn.wrapped.name
-                    ):
-                        data.op.f_name = name
+                for module in compiled_hugr.modules:
+                    for _, data in module.nodes():
+                        if (
+                            isinstance(data.op, ops.FuncDefn)
+                            and data.op.f_name == guppy_defn.wrapped.name
+                        ):
+                            data.op.f_name = name
 
                 self.compiled_defs[name] = guppy_defn.id, compiled_hugr
 
         # Define new `outer` operations
         for inner_def_name in self.compiled_defs:
-            inner_id, inner_module_ptr = self.compiled_defs[inner_def_name]
+            inner_id, inner_hugr = self.compiled_defs[inner_def_name]
 
             parsed_def = ENGINE.get_parsed(inner_id)
 
             assert isinstance(parsed_def, ParsedFunctionDef)
             ty = self.define_inner_type_sig(parsed_def.ty)
 
-            op_def = OpDef(
-                name=inner_def_name,
-                description=defn.__doc__ or "",
-                signature=OpDefSig(poly_func=ty.to_hugr_poly()),
-                lower_funcs=[
-                    he.FixedHugr(
-                        ht.ExtensionSet([self.hugr_ext.name]),
-                        inner_module_ptr.module,
-                    )
-                ],
-            )
-
-            self.hugr_ext.add_op_def(op_def)
-
             def empty_dec() -> None: ...
 
-            def hugr_op(
-                op_def: OpDef,
-            ) -> Callable[[ht.FunctionType, Inst], ops.DataflowOp]:
-                def op(ty: ht.FunctionType, inst: Inst) -> ops.DataflowOp:
-                    return ops.ExtOp(op_def, ty, [arg.to_hugr() for arg in inst])
+            def op_dec(
+                name: str, hugr: Package
+            ) -> Callable[[ht.FunctionType, Inst, CompilerContext], ops.DataflowOp]:
+                def op(
+                    ty: ht.FunctionType, inst: Inst, ctx: CompilerContext
+                ) -> ops.DataflowOp:
+                    op_def = OpDef(
+                        name=name,
+                        description=defn.__doc__ or "",
+                        signature=OpDefSig(poly_func=ty),
+                        lower_funcs=[
+                            he.FixedHugr(
+                                ht.ExtensionSet([ext.name for ext in hugr.extensions]),
+                                mod,
+                            )
+                            for mod in hugr.modules
+                        ],
+                    )
+
+                    self.hugr_ext.add_op_def(op_def)
+
+                    return ops.ExtOp(op_def, ty, [arg.to_hugr(ctx) for arg in inst])
 
                 return op
 
-            guppy_op = guppy.hugr_op(
-                hugr_op(op_def),
+            guppy_op = hugr_op(
+                op_dec(inner_def_name, inner_hugr),
                 name=inner_def_name,
                 signature=ty,
             )(empty_dec)
@@ -152,17 +157,17 @@ class CodeDefinition:
             comptime_args=ty.comptime_args,
         )
 
-    def lower(self, package: ModulePointer) -> ModulePointer:
+    def lower(self, package: Package) -> Package:
         """Function to lower from `outer` operations to `inner`.
 
-        Any `outer` operations are replace with calls to function definitions defined
+        Any `outer` operations are replaced with calls to function definitions defined
         in the hugr extension from the code.
         """
 
         # Find all nodes to replace
         nodes_to_replace = [
             (node, data, data.op.op_def().name)
-            for node, data in package.module.nodes()
+            for node, data in package.modules[0].nodes()
             if isinstance(data.op, ops.ExtOp)
             and data.op.op_def().name in self.hugr_ext.operations
         ]
@@ -178,6 +183,8 @@ class CodeDefinition:
                 assert isinstance(lower_hugr[lower_hugr.module_root].op, ops.Module)
                 assert lower_hugr[lower_hugr.module_root].metadata["name"] == "__main__"
 
+                lower_hugr.entrypoint = lower_hugr.module_root
+
                 # Find node for the function definition
                 try:
                     func_node = next(
@@ -191,8 +198,8 @@ class CodeDefinition:
                         f"Function Definition ({f_name}) not found in hugr."
                     ) from e
 
-                defn_nodes = package.module.insert_hugr(
-                    lower_hugr, package.module.module_root
+                defn_nodes = package.modules[0].insert_hugr(
+                    lower_hugr, package.modules[0].module_root
                 )
 
                 # Get new node locations
@@ -200,32 +207,46 @@ class CodeDefinition:
                 new_module_entry = defn_nodes[lower_hugr.module_root]
 
                 # Update parent/children
-                for node in list(package.module[new_module_entry].children):
-                    package.module[node].parent = package.module.module_root
-                    package.module[package.module.module_root].children.append(node)
-                    package.module[new_module_entry].children.remove(node)
+                for node in list(package.modules[0][new_module_entry].children):
+                    package.modules[0][node].parent = package.modules[0].module_root
+                    package.modules[0][package.modules[0].module_root].children.append(
+                        node
+                    )
+                    package.modules[0][new_module_entry].children.remove(node)
 
                 # Delete original entrypoint
-                package.module.delete_node(new_module_entry)
+                package.modules[0].delete_node(new_module_entry)
 
         # Replace all outer ops with calls to lowering functions
         for node, data, op_name in nodes_to_replace:
             op_sig = self.hugr_ext.get_op(op_name).signature.poly_func
-            op_ports_in = [port for _, port in package.module.incoming_links(node)]
-            op_ports_out = [port for _, port in package.module.outgoing_links(node)]
+            op_ports_in = [port for _, port in package.modules[0].incoming_links(node)]
+            op_ports_out = [port for _, port in package.modules[0].outgoing_links(node)]
 
             assert isinstance(op_sig, ht.PolyFuncType)
 
             func_call = ops.Call(signature=op_sig)
 
             # Remove outer node
-            package.module.delete_node(node)
+            parent = package.modules[0][node].parent
+            if parent:
+                package.modules[0][parent].children.remove(node)
 
-            call_node = package.module.add_node(
+            _, package.modules[0]._nodes[node.idx] = (
+                package.modules[0]._nodes[node.idx],
+                None,
+            )
+
+            # Free up the metadata dictionary
+            node._metadata = {}
+
+            package.modules[0]._free_nodes.append(node)
+
+            call_node = package.modules[0].add_node(
                 func_call, data.parent, len(op_ports_out)
             )
 
-            package.module.add_link(
+            package.modules[0].add_link(
                 func_defn_node[op_name].out(0),
                 call_node.inp(func_call._function_port_offset()),
             )
@@ -233,9 +254,11 @@ class CodeDefinition:
             # Link nodes
             for i, ports in enumerate(op_ports_in):
                 for p in ports:
-                    package.module.add_link(p, call_node.inp(i))
+                    package.modules[0].delete_link(p, node.inp(i))
+                    package.modules[0].add_link(p, call_node.inp(i))
             for i, ports in enumerate(op_ports_out):
                 for p in ports:
-                    package.module.add_link(call_node.out(i), p)
+                    package.modules[0].delete_link(node.out(i), p)
+                    package.modules[0].add_link(call_node.out(i), p)
 
         return package

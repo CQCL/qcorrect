@@ -4,6 +4,7 @@ from typing import Generic
 from guppylang.decorator import guppy
 from guppylang.std import quantum as phys
 from guppylang.std.builtins import array, comptime, nat, owned
+from hugr.package import Package
 
 import qcorrect as qct
 
@@ -62,7 +63,7 @@ def test_lowering():
 
     qct_hugr = code_def.lower(main.compile())
 
-    qct_node_names = {data.op.name() for _, data in qct_hugr.module.nodes()}
+    qct_node_names = {data.op.name() for _, data in qct_hugr.modules[0].nodes()}
 
     @guppy
     def main() -> None:
@@ -71,7 +72,7 @@ def test_lowering():
 
     phys_hugr = main.compile()
 
-    phys_node_names = {data.op.name() for _, data in phys_hugr.module.nodes()}
+    phys_node_names = {data.op.name() for _, data in phys_hugr.modules[0].nodes()}
 
     # We are testing that the set of names matches between the hugr modules
     # Future tests should be more comprehensive but we are currently limited by
@@ -93,4 +94,14 @@ def test_phys_and_code_operations():
         code.measure(q_block)
         phys.measure(phys_qubit)
 
-    code_def.lower(main.compile())
+    hugr = main.compile()
+
+    hugr.extensions.append(code_def.hugr_ext)
+
+    lowered_hugr = code_def.lower(hugr)
+
+    assert isinstance(lowered_hugr, Package)
+
+
+if __name__ == "__main__":
+    test_phys_and_code_operations()
