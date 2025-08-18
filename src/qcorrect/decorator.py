@@ -33,6 +33,9 @@ def block(cls: builtins.type[T]) -> builtins.type[T]:
     for val in cls.__dict__.values():
         if isinstance(val, GuppyDefinition):
             DEF_STORE.register_impl(defn.id, val.wrapped.name, val.id)
+    # Prior to Python 3.13, the `__firstlineno__` attribute on classes is not set.
+    # However, we need this information to precisely look up the source for the
+    # class later. If it's not there, we can set it from the calling frame:
     if not hasattr(cls, "__firstlineno__"):
         cls.__firstlineno__ = get_calling_frame().f_lineno
     # We're pretending to return the class unchanged, but in fact we return
