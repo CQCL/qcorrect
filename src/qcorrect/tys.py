@@ -14,9 +14,18 @@ from guppylang_internals.engine import DEF_STORE
 from guppylang_internals.span import SourceMap
 from guppylang_internals.tys.arg import Argument
 from guppylang_internals.tys.common import ToHugrContext
-from guppylang_internals.tys.ty import OpaqueType, StructType
+from guppylang_internals.tys.const import BoundConstVar
+from guppylang_internals.tys.ty import BoundTypeVar, OpaqueType, StructType
 from hugr import tys as ht
 from hugr.ext import ExplicitBound, TypeDef
+
+
+class CompilerContext(ToHugrContext):
+    def type_var_to_hugr(self, var: BoundTypeVar) -> ht.Type:
+        return ht.Variable(var.idx, var.hugr_bound)
+
+    def const_var_to_hugr(self, var: BoundConstVar) -> ht.TypeArg:
+        return ht.VariableArg(var.idx, ht.BoundedNatParam(upper_bound=None))
 
 
 @dataclass(frozen=True)
@@ -27,7 +36,9 @@ class RawInnerStructDef(RawStructDef):
         hugr_type_def = TypeDef(
             name=parsed_struct_def.name,
             description=parsed_struct_def.description,
-            params=[],
+            params=[
+                param.to_hugr(CompilerContext()) for param in parsed_struct_def.params
+            ],
             bound=ExplicitBound(ht.TypeBound.Linear),
         )
 
