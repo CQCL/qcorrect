@@ -33,6 +33,8 @@ def block(cls: builtins.type[T]) -> builtins.type[T]:
     for val in cls.__dict__.values():
         if isinstance(val, GuppyDefinition):
             DEF_STORE.register_impl(defn.id, val.wrapped.name, val.id)
+    if not hasattr(cls, "__firstlineno__"):
+        cls.__firstlineno__ = get_calling_frame().f_lineno
     # We're pretending to return the class unchanged, but in fact we return
     # a `GuppyDefinition` that handles the comptime logic
     return GuppyDefinition(defn)  # type: ignore[return-value]
