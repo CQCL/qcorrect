@@ -16,9 +16,9 @@ class CodeBlock(Generic[N]):
     data_qs: array[phys.qubit, N]
 
 
-class CodeDef(qct.CodeDefinition):
-    def __init__(self, n: nat):
-        self.n: nat = n
+@qct.code
+class CodeDef:
+    n: nat
 
     @qct.operation
     def zero(self) -> Callable:
@@ -52,16 +52,14 @@ def test_lowering():
     ) -> "array[bool, comptime(n)]":
         return phys.measure_array(q.data_qs)
 
-    code_def = CodeDef(n)
-
-    code = code_def.get_module()
+    code = CodeDef(n)
 
     @guppy
     def main() -> None:
         q = code.zero()
         code.measure(q)
 
-    qct_hugr = code_def.lower(main.compile())
+    qct_hugr = qct.lower(code, main.compile())
 
     qct_node_names = {data.op.name() for _, data in qct_hugr.modules[0].nodes()}
 
@@ -82,9 +80,7 @@ def test_lowering():
 
 
 def test_phys_and_code_operations():
-    code_def = CodeDef(5)
-
-    code = code_def.get_module()
+    code = CodeDef(5)
 
     @guppy
     def main() -> None:
@@ -96,9 +92,9 @@ def test_phys_and_code_operations():
 
     hugr = main.compile()
 
-    hugr.extensions.append(code_def.hugr_ext)
+    hugr.extensions.append(code.hugr_ext)
 
-    lowered_hugr = code_def.lower(hugr)
+    lowered_hugr = qct.lower(code, hugr)
 
     assert isinstance(lowered_hugr, Package)
 

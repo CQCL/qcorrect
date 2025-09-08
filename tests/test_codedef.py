@@ -2,7 +2,7 @@ from collections.abc import Callable
 from typing import Generic
 
 import pytest
-from guppylang.decorator import get_calling_frame, guppy
+from guppylang.decorator import guppy
 from guppylang.std import quantum as phys
 from guppylang.std.builtins import array, comptime, nat, owned
 from guppylang_internals.error import GuppyError, GuppyTypeError
@@ -18,10 +18,9 @@ class CodeBlock(Generic[N]):
     data_qs: array[phys.qubit, N]
 
 
-class CodeDef(qct.CodeDefinition):
-    def __init__(self, n: nat):
-        self.n: nat = n
-        self.frame = get_calling_frame()
+@qct.code
+class CodeDef:
+    n: nat
 
     @qct.operation
     def zero(self) -> Callable:
@@ -43,7 +42,7 @@ class CodeDef(qct.CodeDefinition):
 
 
 def test_code_usage():
-    code = CodeDef(5).get_module()
+    code = CodeDef(5)
 
     @guppy
     def main() -> None:
@@ -56,8 +55,8 @@ def test_code_usage():
 
 
 def test_mismatched_codes():
-    code4 = CodeDef(4).get_module()
-    code5 = CodeDef(5).get_module()
+    code4 = CodeDef(4)
+    code5 = CodeDef(5)
 
     @guppy
     def main() -> None:
@@ -69,7 +68,7 @@ def test_mismatched_codes():
 
 
 def test_block_dropped():
-    code = CodeDef(5).get_module()
+    code = CodeDef(5)
 
     @guppy
     def main() -> None:
