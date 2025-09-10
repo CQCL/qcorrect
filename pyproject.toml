@@ -6,7 +6,7 @@ license = {file = "LICENCE"}
 readme = "README.md"
 requires-python = ">=3.10,<4"
 dependencies = [
-    "guppylang~=0.20",
+    "guppylang~=0.21",
     "hugr>=0.12.2",
     "ruff>=0.12.1",
 ]

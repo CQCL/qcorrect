@@ -16,8 +16,7 @@ class CodeBlock(Generic[N]):
     data_qs: array[phys.qubit, N]
 
 
-@qct.code
-class CodeDef:
+class CodeDef(qct.CodeDefinition):
     n: nat
 
     @qct.operation
@@ -59,7 +58,7 @@ def test_lowering():
         q = code.zero()
         code.measure(q)
 
-    qct_hugr = qct.lower(code, main.compile())
+    qct_hugr = code.lower(main.compile())
 
     qct_node_names = {data.op.name() for _, data in qct_hugr.modules[0].nodes()}
 
@@ -94,10 +93,6 @@ def test_phys_and_code_operations():
 
     hugr.extensions.append(code.hugr_ext)
 
-    lowered_hugr = qct.lower(code, hugr)
+    lowered_hugr = code.lower(hugr)
 
     assert isinstance(lowered_hugr, Package)
-
-
-if __name__ == "__main__":
-    test_phys_and_code_operations()

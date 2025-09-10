@@ -3,7 +3,7 @@ from typing import Generic, no_type_check
 
 from guppylang.decorator import guppy
 from guppylang.std import quantum as phys
-from guppylang.std.builtins import array, comptime, nat, owned
+from guppylang.std.builtins import array, comptime, owned
 
 import qcorrect as qct
 
@@ -18,8 +18,7 @@ class CodeBlock(Generic[N]):
 
 # Define code operations
 class CodeDef(qct.CodeDefinition):
-    def __init__(self, n: nat):
-        self.n: nat = n
+    n: int
 
     @qct.operation
     def zero(self) -> Callable:
@@ -64,9 +63,7 @@ class CodeDef(qct.CodeDefinition):
 
 
 # Create code instance and get guppy module
-code_def = CodeDef(5)
-
-code = code_def.get_module()
+code = CodeDef(n=5)
 
 
 # Write logical guppy program
@@ -75,11 +72,10 @@ def main() -> None:
     q0 = code.zero()
     q1 = code.zero()
     code.cx(q0, q1)
-    code.cx_intra_block(q0, 0, 1)
     code.measure(q0)
     code.measure(q1)
 
 
 hugr = main.compile()
 
-hugr = code_def.lower(hugr)
+hugr = code.lower(hugr)

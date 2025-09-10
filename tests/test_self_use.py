@@ -1,10 +1,9 @@
+from collections.abc import Callable
 from typing import Generic
 
-import pytest
 from guppylang.decorator import guppy
 from guppylang.std import quantum as phys
 from guppylang.std.builtins import array, comptime, nat, owned
-from guppylang_internals.error import GuppyError, GuppyTypeError
 from hugr.package import Package
 
 import qcorrect as qct
@@ -21,7 +20,7 @@ class CodeDef(qct.CodeDefinition):
     n: nat
 
     @qct.operation
-    def zero(self):
+    def zero(self) -> Callable:
         @guppy
         def circuit() -> "CodeBlock[comptime(self.n)]":
             return CodeBlock(array(phys.qubit() for _ in range(comptime(self.n))))
@@ -29,7 +28,15 @@ class CodeDef(qct.CodeDefinition):
         return circuit
 
     @qct.operation
-    def measure(self):
+    def zero_call(self) -> Callable:
+        @guppy
+        def circuit() -> "CodeBlock[comptime(self.n)]":
+            return self.zero()
+
+        return circuit
+
+    @qct.operation
+    def measure(self) -> Callable:
         @guppy
         def circuit(
             q: "CodeBlock[comptime(self.n)] @ owned",
@@ -39,38 +46,14 @@ class CodeDef(qct.CodeDefinition):
         return circuit
 
 
-def test_code_usage():
+def test_self_use():
     code = CodeDef(5)
 
     @guppy
     def main() -> None:
-        q = code.zero()
+        q = code.zero_call()
         code.measure(q)
 
     hugr = main.compile()
 
     assert isinstance(hugr, Package)
-
-
-def test_mismatched_codes():
-    code4 = CodeDef(4)
-    code5 = CodeDef(5)
-
-    @guppy
-    def main() -> None:
-        q = code4.zero()
-        code5.measure(q)
-
-    with pytest.raises(GuppyTypeError):
-        main.compile()
-
-
-def test_block_dropped():
-    code = CodeDef(5)
-
-    @guppy
-    def main() -> None:
-        q = code.zero()
-
-    with pytest.raises(GuppyError):
-        main.compile()

@@ -43,7 +43,7 @@ class RawInnerStructDef(RawStructDef):
         )
 
         def to_hugr_gen(
-            type_def,
+            type_def: TypeDef,
         ) -> Callable[[Sequence[Argument], ToHugrContext], ht.Type]:
             def to_hugr(args: Sequence[Argument], ctx: ToHugrContext) -> ht.Type:
                 return ht.ExtType(
