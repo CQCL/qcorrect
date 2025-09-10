@@ -1,4 +1,3 @@
-from collections.abc import Callable
 from typing import Generic, no_type_check
 
 from guppylang.decorator import guppy
@@ -21,7 +20,7 @@ class CodeDef(qct.CodeDefinition):
     n: int
 
     @qct.operation
-    def zero(self) -> Callable:
+    def zero(self):
         @guppy
         @no_type_check
         def circuit() -> "CodeBlock[comptime(self.n)]":
@@ -30,7 +29,7 @@ class CodeDef(qct.CodeDefinition):
         return circuit
 
     @qct.operation
-    def cx(self) -> Callable:
+    def cx(self):
         @guppy
         @no_type_check
         def circuit(
@@ -42,7 +41,7 @@ class CodeDef(qct.CodeDefinition):
         return circuit
 
     @qct.operation
-    def cx_intra_block(self) -> Callable:
+    def cx_intra_block(self):
         @guppy
         @no_type_check
         def circuit(qb: "CodeBlock[comptime(self.n)]", ctl: int, tgt: int) -> None:
@@ -51,7 +50,7 @@ class CodeDef(qct.CodeDefinition):
         return circuit
 
     @qct.operation
-    def measure(self) -> Callable:
+    def measure(self):
         @guppy
         @no_type_check
         def circuit(

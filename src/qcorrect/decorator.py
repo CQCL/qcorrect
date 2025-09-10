@@ -18,6 +18,7 @@ from guppylang_internals.compiler.core import CompilerContext
 from guppylang_internals.decorator import hugr_op
 from guppylang_internals.definition.common import DefId
 from guppylang_internals.engine import DEF_STORE, ENGINE
+from guppylang_internals.tys.common import QuantifiedToHugrContext
 from guppylang_internals.tys.subst import Inst
 from guppylang_internals.tys.ty import FuncInput, FunctionType
 from hugr import ext as he
@@ -63,28 +64,9 @@ def operation(defn: Callable[..., F]) -> F:
 
 
 def op_dec(
-    op_name: str,
-    compiled_defn: Package,
-    hugr_ext: Extension,
+    op_def: OpDef,
 ) -> Callable[[ht.FunctionType, Inst, CompilerContext], ops.DataflowOp]:
     def op(ty: ht.FunctionType, op_inst: Inst, ctx: CompilerContext) -> ops.DataflowOp:
-        # Define `outer` hugr operation
-        op_def = OpDef(
-            name=op_name,
-            description="",
-            signature=OpDefSig(poly_func=ty),
-            lower_funcs=[
-                he.FixedHugr(
-                    ht.ExtensionSet([ext.name for ext in compiled_defn.extensions]),
-                    hugr_module,
-                )
-                for hugr_module in compiled_defn.modules
-            ],
-        )
-
-        # Add op_def to hugr extension
-        hugr_ext.add_op_def(op_def)
-
         return ops.ExtOp(op_def, ty, [arg.to_hugr(ctx) for arg in op_inst])
 
     return op
@@ -133,13 +115,45 @@ class CodeDefinition(ModuleType):
             compiled_hugr,
         ) in inst.compiled_defs.items():
             if isinstance(defn, GuppyDefinition):
+                parsed_defn = cast("ParsedFunctionDef", ENGINE.get_parsed(defn_id))
+
+                hugr_function_type = ht.FunctionType(
+                    input=ht.TypeRow(
+                        i.ty.to_hugr(QuantifiedToHugrContext(parsed_defn.ty.params))
+                        for i in parsed_defn.ty.inputs
+                    ),
+                    output=ht.TypeRow(
+                        [
+                            parsed_defn.ty.output.to_hugr(
+                                QuantifiedToHugrContext(parsed_defn.ty.params)
+                            )
+                        ]
+                    ),
+                )
+
+                # Define hugr OpDef for outer type
+                outer_op_def = OpDef(
+                    name=name,
+                    description="",
+                    signature=OpDefSig(poly_func=hugr_function_type),
+                    lower_funcs=[
+                        he.FixedHugr(
+                            ht.ExtensionSet(
+                                [ext.name for ext in compiled_hugr.extensions]
+                            ),
+                            hugr_module,
+                        )
+                        for hugr_module in compiled_hugr.modules
+                    ],
+                )
+
+                # Add op_def to hugr extension
+                inst.hugr_ext.add_op_def(outer_op_def)
 
                 def empty_dec() -> None: ...
 
-                parsed_defn = cast("ParsedFunctionDef", ENGINE.get_parsed(defn_id))
-
                 guppy_op = hugr_op(
-                    op_dec(name, compiled_hugr, inst.hugr_ext),
+                    op_dec(outer_op_def),
                     name=name,
                     signature=inst.define_outer_type_sig(parsed_defn.ty),
                 )(empty_dec)
