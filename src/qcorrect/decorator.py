@@ -1,7 +1,6 @@
 import builtins
 import inspect
 from collections.abc import Callable
-from dataclasses import dataclass
 from types import ModuleType
 from typing import (
     TYPE_CHECKING,
@@ -15,10 +14,9 @@ from typing import (
 from guppylang.decorator import custom_guppy_decorator, get_calling_frame
 from guppylang.defs import GuppyDefinition
 from guppylang_internals.compiler.core import CompilerContext
-from guppylang_internals.decorator import hugr_op
 from guppylang_internals.definition.common import DefId
+from guppylang_internals.definition.custom import OpCompiler
 from guppylang_internals.engine import DEF_STORE, ENGINE
-from guppylang_internals.tys.common import QuantifiedToHugrContext
 from guppylang_internals.tys.subst import Inst
 from guppylang_internals.tys.ty import FuncInput, FunctionType
 from hugr import ext as he
@@ -28,9 +26,11 @@ from hugr.ext import Extension, OpDef, OpDefSig
 from hugr.package import Package
 from pydantic_extra_types.semantic_version import SemanticVersion
 
+from qcorrect.lowerable import lowerable_function
 from qcorrect.tys import InnerStructType, RawInnerStructDef
 
 if TYPE_CHECKING:
+    from guppylang_internals.definition.custom import RawCustomFunctionDef
     from guppylang_internals.definition.function import ParsedFunctionDef
 
 T = TypeVar("T")
@@ -39,6 +39,7 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 @custom_guppy_decorator
 def block(cls: builtins.type[T]) -> builtins.type[T]:
+    """Decorator to annotate a class as a code block."""
     defn = RawInnerStructDef(DefId.fresh(), cls.__name__, None, cls)
     DEF_STORE.register_def(defn, get_calling_frame())
     for val in cls.__dict__.values():
@@ -56,7 +57,7 @@ def block(cls: builtins.type[T]) -> builtins.type[T]:
 
 @custom_guppy_decorator
 def operation(defn: Callable[..., F]) -> F:
-    """Decorator to define code operations"""
+    """Decorator to annotate functions as operations of the code"""
 
     defn.__setattr__("__qct_op__", True)
 
@@ -66,37 +67,48 @@ def operation(defn: Callable[..., F]) -> F:
 def op_dec(
     op_def: OpDef,
 ) -> Callable[[ht.FunctionType, Inst, CompilerContext], ops.DataflowOp]:
+    """Helper function to generate hugr op definition."""
+
     def op(ty: ht.FunctionType, op_inst: Inst, ctx: CompilerContext) -> ops.DataflowOp:
         return ops.ExtOp(op_def, ty, [arg.to_hugr(ctx) for arg in op_inst])
 
     return op
 
 
-@dataclass_transform()
+@dataclass_transform(kw_only_default=True)
 class CodeDefinition(ModuleType):
     guppy_module: ModuleType
     hugr_ext: Extension
     compiled_defs: ClassVar[dict[str, tuple[DefId, Package]]] = {}
 
-    def __new__(cls, *args, **kwargs):
-        # Create new instance and initialise
-        inst = super().__new__(dataclass(cls), *args, **kwargs)
-        inst.__init__(*args, **kwargs)
-
+    def __init__(self, **kwargs):
         # Set name and docs for Module
-        inst.__name__ = cls.__name__
-        inst.__doc__ = cls.__doc__
+        self.__name__ = self.__class__.__name__
+        self.__doc__ = self.__class__.__doc__
 
-        # Define new Hugr extension
-        inst.hugr_ext = Extension(inst.__name__, SemanticVersion(0, 1, 0))
+        # Get class annotations
+        cls_annotations = inspect.get_annotations(self.__class__)
 
-        # Add all definitions to Module
-        for name, defn in inspect.getmembers(cls):
+        # Set class attributes to replicate `dataclass` behaviour
+        for name, type in cls_annotations.items():
+            # Check if name in kwargs otherwise use default
+            arg_value = kwargs[name] if name in kwargs else self.__getattribute__(name)
+
+            if isinstance(arg_value, type):
+                setattr(self, name, arg_value)
+            else:
+                raise TypeError(f"Expected type {type}")
+
+        # Create new Hugr extension
+        self.hugr_ext = Extension(self.__name__, SemanticVersion(0, 1, 0))
+
+        # Add all definitions to module
+        for name, defn in inspect.getmembers(self.__class__):
             if hasattr(defn, "__qct_op__"):
-                inst.__setattr__(name, defn(inst))
+                self.__setattr__(name, defn(self))
 
-        # Compile all definitions
-        for name, defn in inspect.getmembers(inst):
+        # Compile all Guppy definitions
+        for name, defn in inspect.getmembers(self):
             if isinstance(defn, GuppyDefinition):
                 compiled_hugr = defn.compile()
                 # Update FuncDefn name
@@ -107,35 +119,27 @@ class CodeDefinition(ModuleType):
                             and data.op.f_name == defn.wrapped.name
                         ):
                             data.op.f_name = name
-                inst.compiled_defs[name] = (defn.id, compiled_hugr)
+                self.compiled_defs[name] = (defn.id, compiled_hugr)
 
         # Replace `inner` operations with `outer`
         for name, (
             defn_id,
             compiled_hugr,
-        ) in inst.compiled_defs.items():
+        ) in self.compiled_defs.items():
             if isinstance(defn, GuppyDefinition):
                 parsed_defn = cast("ParsedFunctionDef", ENGINE.get_parsed(defn_id))
 
-                hugr_function_type = ht.FunctionType(
-                    input=ht.TypeRow(
-                        i.ty.to_hugr(QuantifiedToHugrContext(parsed_defn.ty.params))
-                        for i in parsed_defn.ty.inputs
-                    ),
-                    output=ht.TypeRow(
-                        [
-                            parsed_defn.ty.output.to_hugr(
-                                QuantifiedToHugrContext(parsed_defn.ty.params)
-                            )
-                        ]
-                    ),
+                hugr_func_defn = next(
+                    data.op
+                    for node, data in compiled_hugr.modules[0].nodes()
+                    if isinstance(data.op, ops.FuncDefn) and data.op.f_name == name
                 )
 
-                # Define hugr OpDef for outer type
+                # Define hugr OpDef for outer definition
                 outer_op_def = OpDef(
                     name=name,
                     description="",
-                    signature=OpDefSig(poly_func=hugr_function_type),
+                    signature=OpDefSig(poly_func=hugr_func_defn.signature),
                     lower_funcs=[
                         he.FixedHugr(
                             ht.ExtensionSet(
@@ -148,19 +152,19 @@ class CodeDefinition(ModuleType):
                 )
 
                 # Add op_def to hugr extension
-                inst.hugr_ext.add_op_def(outer_op_def)
+                self.hugr_ext.add_op_def(outer_op_def)
 
-                def empty_dec() -> None: ...
+                raw_defn = cast("RawCustomFunctionDef", DEF_STORE.raw_defs[defn_id])
 
-                guppy_op = hugr_op(
-                    op_dec(outer_op_def),
+                py_func = raw_defn.python_func
+
+                guppy_op = lowerable_function(
+                    OpCompiler(op_dec(outer_op_def)),
                     name=name,
-                    signature=inst.define_outer_type_sig(parsed_defn.ty),
-                )(empty_dec)
+                    signature=self.define_outer_type_sig(parsed_defn.ty),
+                )(py_func)
 
-                inst.__setattr__(name, guppy_op)
-
-        return inst
+                self.__setattr__(name, guppy_op)
 
     def define_outer_type_sig(self, ty: FunctionType) -> FunctionType:
         """Define a new FunctionType that will be the signature of the `outer`
@@ -182,12 +186,11 @@ class CodeDefinition(ModuleType):
 
         if isinstance(ty.output, InnerStructType):
             outer_type = ty.output.outer_type
-            self.hugr_ext.add_type_def(ty.output.hugr_type_def)
-
+            if not self.hugr_ext.get_type(ty.output.hugr_type_def.name):
+                self.hugr_ext.add_type_def(ty.output.hugr_type_def)
             outer_output = outer_type
         else:
             outer_output = ty.output
-
         return FunctionType(
             inputs=outer_inputs,
             output=outer_output,
@@ -264,7 +267,8 @@ class CodeDefinition(ModuleType):
 
             assert isinstance(op_sig, ht.PolyFuncType)
 
-            func_call = ops.Call(signature=op_sig)
+            # Define call operation
+            func_call = ops.Call(signature=op_sig, instantiation=op_sig.body)
 
             # Remove outer node
             parent = package.modules[0][node].parent

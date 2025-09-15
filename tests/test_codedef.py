@@ -3,7 +3,7 @@ from typing import Generic
 import pytest
 from guppylang.decorator import guppy
 from guppylang.std import quantum as phys
-from guppylang.std.builtins import array, comptime, nat, owned
+from guppylang.std.builtins import array, comptime, owned
 from guppylang_internals.error import GuppyError, GuppyTypeError
 from hugr.package import Package
 
@@ -18,7 +18,7 @@ class CodeBlock(Generic[N]):
 
 
 class CodeDef(qct.CodeDefinition):
-    n: nat
+    n: int
 
     @qct.operation
     def zero(self):
@@ -40,7 +40,7 @@ class CodeDef(qct.CodeDefinition):
 
 
 def test_code_usage():
-    code = CodeDef(5)
+    code = CodeDef(n=5)
 
     @guppy
     def main() -> None:
@@ -53,8 +53,8 @@ def test_code_usage():
 
 
 def test_mismatched_codes():
-    code4 = CodeDef(4)
-    code5 = CodeDef(5)
+    code4 = CodeDef(n=4)
+    code5 = CodeDef(n=5)
 
     @guppy
     def main() -> None:
@@ -66,7 +66,7 @@ def test_mismatched_codes():
 
 
 def test_block_dropped():
-    code = CodeDef(5)
+    code = CodeDef(n=5)
 
     @guppy
     def main() -> None:

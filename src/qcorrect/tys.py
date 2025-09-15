@@ -1,6 +1,7 @@
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
+from guppylang.decorator import custom_guppy_decorator
 from guppylang_internals.ast_util import AstNode
 from guppylang_internals.checker.core import Globals
 from guppylang_internals.definition.common import DefId
@@ -17,6 +18,16 @@ from guppylang_internals.tys.common import QuantifiedToHugrContext, ToHugrContex
 from guppylang_internals.tys.ty import OpaqueType, StructType
 from hugr import tys as ht
 from hugr.ext import ExplicitBound, TypeDef
+
+
+@custom_guppy_decorator
+def to_hugr_gen(
+    type_def: TypeDef,
+) -> Callable[[Sequence[Argument], ToHugrContext], ht.Type]:
+    def to_hugr(args: Sequence[Argument], ctx: ToHugrContext) -> ht.Type:
+        return ht.ExtType(type_def=type_def, args=[arg.to_hugr(ctx) for arg in args])
+
+    return to_hugr
 
 
 @dataclass(frozen=True)
