@@ -56,12 +56,16 @@ def block(cls: builtins.type[T]) -> builtins.type[T]:
 
 
 @custom_guppy_decorator
-def operation(defn: Callable[..., F]) -> F:
-    """Decorator to annotate functions as operations of the code"""
+def operation(op: GuppyDefinition) -> Callable[[Callable[..., F]], F]:
+    def dec(defn: Callable[..., F]) -> F:
+        """Decorator to annotate functions as operations of the code"""
 
-    defn.__setattr__("__qct_op__", True)
+        defn.__setattr__("__qct_op__", True)
+        defn.__setattr__("__tket_op__", op)
 
-    return defn  #  type: ignore[return-value]
+        return defn  #  type: ignore[return-value]
+
+    return dec
 
 
 def op_dec(
@@ -305,3 +309,15 @@ class CodeDefinition(ModuleType):
                     package.modules[0].add_link(call_node.out(i), p)
 
         return package
+
+    def encode(self, hugr: Package):
+        """Method to encode a hugr using code operations
+
+        Args:
+            hugr: program to be encoded
+        """
+
+        # Loop through hugr operations
+        # Replace operations in program with code `outer` operations
+
+        return hugr

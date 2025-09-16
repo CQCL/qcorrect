@@ -19,7 +19,7 @@ class CodeBlock(Generic[N]):
 class CodeDef(qct.CodeDefinition):
     n: int
 
-    @qct.operation
+    @qct.operation(op=phys.qubit)
     def zero(self):
         @guppy
         @no_type_check
@@ -28,7 +28,7 @@ class CodeDef(qct.CodeDefinition):
 
         return circuit
 
-    @qct.operation
+    @qct.operation(op=phys.cx)
     def cx(self):
         @guppy
         @no_type_check
@@ -40,7 +40,7 @@ class CodeDef(qct.CodeDefinition):
 
         return circuit
 
-    @qct.operation
+    @qct.operation(op=phys.cx)
     def cx_intra_block(self):
         @guppy
         @no_type_check
@@ -49,7 +49,7 @@ class CodeDef(qct.CodeDefinition):
 
         return circuit
 
-    @qct.operation
+    @qct.operation(op=phys.measure)
     def measure(self):
         @guppy
         @no_type_check

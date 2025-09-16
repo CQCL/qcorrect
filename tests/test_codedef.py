@@ -20,7 +20,7 @@ class CodeBlock(Generic[N]):
 class CodeDef(qct.CodeDefinition):
     n: int
 
-    @qct.operation
+    @qct.operation(op=phys.qubit)
     def zero(self):
         @guppy
         def circuit() -> "CodeBlock[comptime(self.n)]":
@@ -28,7 +28,7 @@ class CodeDef(qct.CodeDefinition):
 
         return circuit
 
-    @qct.operation
+    @qct.operation(op=phys.measure)
     def measure(self):
         @guppy
         def circuit(
