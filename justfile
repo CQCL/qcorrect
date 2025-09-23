@@ -1,5 +1,5 @@
-test:
-	uv run pytest .
+test TEST_FILE=".":
+	uv run pytest "{{TEST_FILE}}"
 
 lint:
 	uv run ruff format --check
