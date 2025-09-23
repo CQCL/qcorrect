@@ -49,7 +49,7 @@ def block(cls: builtins.type[T]) -> builtins.type[T]:
     # However, we need this information to precisely look up the source for the
     # class later. If it's not there, we can set it from the calling frame:
     if not hasattr(cls, "__firstlineno__"):
-        object.__setattr__(cls, "__firstlineno__", get_calling_frame().f_lineno)
+        cls.__firstlineno__ = get_calling_frame().f_lineno
     # We're pretending to return the class unchanged, but in fact we return
     # a `GuppyDefinition` that handles the comptime logic
     return GuppyDefinition(defn)  # type: ignore[return-value]
