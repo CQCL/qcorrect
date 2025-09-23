@@ -12,7 +12,7 @@ from typing import (
 )
 
 from guppylang.decorator import custom_guppy_decorator, get_calling_frame
-from guppylang.defs import GuppyDefinition
+from guppylang.defs import GuppyDefinition, GuppyFunctionDefinition
 from guppylang_internals.compiler.core import CompilerContext
 from guppylang_internals.definition.common import DefId
 from guppylang_internals.definition.custom import OpCompiler
@@ -113,8 +113,8 @@ class CodeDefinition(ModuleType):
 
         # Compile all Guppy definitions
         for name, defn in inspect.getmembers(self):
-            if isinstance(defn, GuppyDefinition):
-                compiled_hugr = defn.compile()
+            if isinstance(defn, GuppyFunctionDefinition):
+                compiled_hugr = defn.compile_function()
                 # Update FuncDefn name
                 for module in compiled_hugr.modules:
                     for _, data in module.nodes():
