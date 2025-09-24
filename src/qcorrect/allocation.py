@@ -143,7 +143,7 @@ def trace_qubit(
 
 
 def allocate(hugr: Package, strategy: AllocationStrategy):
-    """Method to allocate qubits in a hugr to code blocks. This methods loops through
+    """Method to allocate qubits in a hugr to code blocks. This method loops through
     all nodes to find QAlloc nodes. The links are traced until we reach a measurement or
     discard. Each node is labelled to indicate which qubit should be allocated to which
     block address.
@@ -152,7 +152,7 @@ def allocate(hugr: Package, strategy: AllocationStrategy):
         hugr: hugr to be allocated.
         strategy: strategy used to allocate addresses.
     """
-    # Loop through all hugr mdules
+    # Loop through all hugr modules
     for module in hugr.modules:
         # Loop through all qalloc nodes and trace qubit
         for node in get_qalloc_nodes(module):
