@@ -190,7 +190,7 @@ class CodeDefinition(ModuleType):
 
         if isinstance(ty.output, InnerStructType):
             outer_type = ty.output.outer_type
-            if not self.hugr_ext.get_type(ty.output.hugr_type_def.name):
+            if ty.output.hugr_type_def.name not in self.hugr_ext.types:
                 self.hugr_ext.add_type_def(ty.output.hugr_type_def)
             outer_output = outer_type
         else:
