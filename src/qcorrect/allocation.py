@@ -5,7 +5,7 @@ from typing import cast
 
 import hugr.tys as ht
 from hugr.hugr import Hugr, Node, NodeData
-from hugr.ops import ExtOp
+from hugr.ops import ExtOp, Op
 from hugr.package import Package
 
 
@@ -24,7 +24,7 @@ class AllocationStrategy(ABC):
     allocated_positions: list[int] = field(default_factory=list)
 
     @abstractmethod
-    def __next__(self, *args, **kwargs) -> QubitAddress: ...
+    def __next__(self) -> QubitAddress: ...
 
 
 @dataclass(kw_only=True)
@@ -68,7 +68,7 @@ class RandomAllocation(AllocationStrategy):
         return QubitAddress(block_id, block_position)
 
 
-def get_qalloc_nodes(hugr: Hugr) -> list[Node]:
+def get_qalloc_nodes(hugr: Hugr[Op]) -> list[Node]:
     """Helper method to get QAlloc ops from a hugr."""
     return [
         node
@@ -78,8 +78,8 @@ def get_qalloc_nodes(hugr: Hugr) -> list[Node]:
 
 
 def add_qubit_address_label(
-    hugr: Hugr, node: Node, port_offset: int, address: QubitAddress
-):
+    hugr: Hugr[Op], node: Node, port_offset: int, address: QubitAddress
+) -> None:
     """Add qubit address (block_id and position) to a node metadata for a specific
     port_offset.
 
@@ -99,7 +99,7 @@ def add_qubit_address_label(
 
 
 def trace_qubit(
-    hugr: Hugr,
+    hugr: Hugr[Op],
     start_node: Node,
     port_offset: int = 0,
     address: QubitAddress | None = None,
@@ -142,7 +142,7 @@ def trace_qubit(
         return [(start_node, port_offset)]
 
 
-def allocate(hugr: Package, strategy: AllocationStrategy):
+def allocate(hugr: Package, strategy: AllocationStrategy) -> None:
     """Method to allocate qubits in a hugr to code blocks. This method loops through
     all nodes to find QAlloc nodes. The links are traced until we reach a measurement or
     discard. Each node is labelled to indicate which qubit should be allocated to which
@@ -157,3 +157,9 @@ def allocate(hugr: Package, strategy: AllocationStrategy):
         # Loop through all qalloc nodes and trace qubit
         for node in get_qalloc_nodes(module):
             trace_qubit(module, node, port_offset=0, address=next(strategy))
+
+
+# def validate_allocation(hugr: Package):
+
+#     for module in hugr.modules[0]:
+#         for node in get_qalloc_nodes(modules):

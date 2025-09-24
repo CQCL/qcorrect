@@ -6,6 +6,8 @@ from typing import (
     TYPE_CHECKING,
     Any,
     ClassVar,
+    Generic,
+    ParamSpec,
     TypeVar,
     cast,
     dataclass_transform,
@@ -18,7 +20,7 @@ from guppylang_internals.definition.common import DefId
 from guppylang_internals.definition.custom import OpCompiler
 from guppylang_internals.engine import DEF_STORE, ENGINE
 from guppylang_internals.tys.subst import Inst
-from guppylang_internals.tys.ty import FuncInput, FunctionType
+from guppylang_internals.tys.ty import FuncInput, FunctionType, Type
 from hugr import ext as he
 from hugr import ops
 from hugr import tys as ht
@@ -35,6 +37,7 @@ if TYPE_CHECKING:
 
 T = TypeVar("T")
 F = TypeVar("F", bound=Callable[..., Any])
+P = ParamSpec("P")
 
 
 @custom_guppy_decorator
@@ -49,7 +52,7 @@ def block(cls: builtins.type[T]) -> builtins.type[T]:
     # However, we need this information to precisely look up the source for the
     # class later. If it's not there, we can set it from the calling frame:
     if not hasattr(cls, "__firstlineno__"):
-        cls.__firstlineno__ = get_calling_frame().f_lineno
+        cls.__firstlineno__ = get_calling_frame().f_lineno  # type: ignore[attr-defined]
     # We're pretending to return the class unchanged, but in fact we return
     # a `GuppyDefinition` that handles the comptime logic
     return GuppyDefinition(defn)  # type: ignore[return-value]
@@ -57,9 +60,9 @@ def block(cls: builtins.type[T]) -> builtins.type[T]:
 
 @custom_guppy_decorator
 def operation(op: GuppyDefinition) -> Callable[[Callable[..., F]], F]:
-    def dec(defn: Callable[..., F]) -> F:
-        """Decorator to annotate functions as operations of the code"""
+    """Decorator to annotate functions as operations of the code"""
 
+    def dec(defn: Callable[..., F]) -> F:
         defn.__setattr__("__qct_op__", True)
         defn.__setattr__("__tket_op__", op)
 
@@ -80,12 +83,12 @@ def op_dec(
 
 
 @dataclass_transform(kw_only_default=True)
-class CodeDefinition(ModuleType):
+class CodeDefinition(ModuleType, Generic[P]):
     guppy_module: ModuleType
     hugr_ext: Extension
     compiled_defs: ClassVar[dict[str, tuple[DefId, Package]]] = {}
 
-    def __init__(self, **kwargs):
+    def __init__(self, *args: P.args, **kwargs: P.kwargs):
         # Set name and docs for Module
         self.__name__ = self.__class__.__name__
         self.__doc__ = self.__class__.__doc__
@@ -192,7 +195,7 @@ class CodeDefinition(ModuleType):
             outer_type = ty.output.outer_type
             if ty.output.hugr_type_def.name not in self.hugr_ext.types:
                 self.hugr_ext.add_type_def(ty.output.hugr_type_def)
-            outer_output = outer_type
+            outer_output = cast("Type", outer_type)
         else:
             outer_output = ty.output
         return FunctionType(
@@ -299,18 +302,18 @@ class CodeDefinition(ModuleType):
             )
 
             # Link nodes
-            for i, ports in enumerate(op_ports_in):
-                for p in ports:
-                    package.modules[0].delete_link(p, node.inp(i))
-                    package.modules[0].add_link(p, call_node.inp(i))
-            for i, ports in enumerate(op_ports_out):
-                for p in ports:
-                    package.modules[0].delete_link(node.out(i), p)
-                    package.modules[0].add_link(call_node.out(i), p)
+            for i, out_ports in enumerate(op_ports_in):
+                for p_out in out_ports:
+                    package.modules[0].delete_link(p_out, node.inp(i))
+                    package.modules[0].add_link(p_out, call_node.inp(i))
+            for i, in_ports in enumerate(op_ports_out):
+                for p_in in in_ports:
+                    package.modules[0].delete_link(node.out(i), p_in)
+                    package.modules[0].add_link(call_node.out(i), p_in)
 
         return package
 
-    def encode(self, hugr: Package):
+    def encode(self, hugr: Package) -> Package:
         """Method to encode a hugr using code operations
 
         Args:
