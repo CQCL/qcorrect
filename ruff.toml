@@ -75,7 +75,7 @@ ignore = [
 
 [lint.per-file-ignores]
 "src/qcorrect/decorator.py" = ["B023"]
-"tests/*" = ["F841", "C416", "RUF005"]
+"tests/*" = ["F841", "C416", "RUF005", "INP001"]
 "examples/*" = ["F821", "INP001"]
 "__init__.py" = ["F401"]                            
 
