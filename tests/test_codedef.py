@@ -28,6 +28,14 @@ class CodeDef(qct.CodeDefinition):
 
         return circuit
 
+    @qct.operation(op=phys.qubit)
+    def zero_call(self):
+        @guppy
+        def circuit() -> "CodeBlock[comptime(self.n)]":
+            return self.zero()
+
+        return circuit
+
     @qct.operation(op=phys.measure)
     def measure(self):
         @guppy
@@ -74,3 +82,14 @@ def test_block_dropped():
 
     with pytest.raises(GuppyError):
         main.compile()
+
+
+def test_internal_method_call():
+    code = CodeDef(n=5)
+
+    @guppy
+    def main() -> None:
+        q = code.zero_call()
+        code.measure(q)
+
+    main.compile()

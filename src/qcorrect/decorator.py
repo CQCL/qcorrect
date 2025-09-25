@@ -221,10 +221,15 @@ class CodeDefinition(ModuleType, Generic[P]):
             and data.op.op_def().name in self.hugr_ext.operations
         ]
 
+        # Get list of op names
+        ops_used = [name for _, _, name in nodes_to_replace]
+
         # Add all lowering functions
         func_defn_node = {}
 
         for f_name, op in self.hugr_ext.operations.items():
+            if f_name not in ops_used:
+                continue
             for lower_funcs in op.lower_funcs:
                 lower_hugr = lower_funcs.hugr
 

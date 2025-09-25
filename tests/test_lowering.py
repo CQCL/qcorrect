@@ -4,7 +4,6 @@ from typing import Generic
 from guppylang import guppy
 from guppylang.std import quantum as phys
 from guppylang.std.builtins import array, comptime, owned, result
-from hugr.package import Package
 from hugr.qsystem.result import QsysResult
 from selene_hugr_qis_compiler import check_hugr
 from selene_sim import Quest, build
@@ -70,7 +69,7 @@ def test_lowering():
         return phys.measure_array(q.data_qs)
 
     @guppy
-    def main() -> None:
+    def main() -> None:  # type: ignore[no-redef]
         q = zero()
         x(q)
         measure(q)
@@ -143,6 +142,3 @@ def test_simulation():
     ).register_counts()["res"]
 
     assert Counter({f"{'1' * n_qubits}": 1}) == res
-
-
-test_phys_and_code_operations()
