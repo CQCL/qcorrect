@@ -159,7 +159,76 @@ def allocate(hugr: Package, strategy: AllocationStrategy) -> None:
             trace_qubit(module, node, port_offset=0, address=next(strategy))
 
 
-# def validate_allocation(hugr: Package):
+def validate_allocation(
+    hugr: Package, block_size: int | None = None, max_blocks: int | None = None
+) -> None:
+    for module in hugr.modules:
+        allocated_addresses: set[QubitAddress] = set()
+        for node in get_qalloc_nodes(module):
+            # Get qubit addresses from node
+            try:
+                address_dict = cast(
+                    "dict[int, dict[str, int]]", node.metadata["qubit_addresses"]
+                )
+            except KeyError as e:
+                raise KeyError(
+                    f"Qubit address dict not found for QAlloc node ({node})"
+                ) from e
 
-#     for module in hugr.modules[0]:
-#         for node in get_qalloc_nodes(modules):
+            # QAlloc nodes should have a single qubit address
+            if address_dict.keys() != set({0}):
+                raise KeyError(
+                    "QAlloc should have a single address. "
+                    f"Keys found: {list(address_dict.keys())}.",
+                )
+
+            qubit_address = QubitAddress(
+                address_dict[0]["block_id"], address_dict[0]["position"]
+            )
+
+            # Check if address has already been used
+            if qubit_address in allocated_addresses:
+                raise ValueError(
+                    f"Address {qubit_address} has previously been allocated."
+                )
+
+            # Check position
+            if block_size is not None and qubit_address.position >= block_size:
+                raise ValueError(
+                    "Assigned position exceeds block size. "
+                    f"position={qubit_address.position}, block size = {block_size}"
+                )
+
+            # Check max blocks
+            if max_blocks is not None and qubit_address.block >= max_blocks:
+                raise ValueError(
+                    f"Assigned block id exceeds maximum blocks. "
+                    f"block_id={qubit_address.block}, max_blocks={max_blocks}"
+                )
+
+            # Add address
+            allocated_addresses.add(qubit_address)
+
+            # Trace nodes (skipping starting QAlloc node)
+            for trace_node, port_offset in trace_qubit(module, node)[1:]:
+                try:
+                    trace_node_address = cast(
+                        "dict ", trace_node.metadata["qubit_addresses"]
+                    )[port_offset]
+                except KeyError as e:
+                    raise KeyError(
+                        f"Qubit address dict not found for node ({trace_node})"
+                    ) from e
+
+                # Check qubit address is the same
+                if (
+                    trace_node_address["block_id"] != qubit_address.block
+                    or trace_node_address["position"] != qubit_address.position
+                ):
+                    qb_address = QubitAddress(
+                        trace_node_address["block_id"], trace_node_address["position"]
+                    )
+                    raise ValueError(
+                        f"Qubit address ({qb_address}) does not match input "
+                        f"({qubit_address}) at {trace_node} offset {port_offset}."
+                    )
