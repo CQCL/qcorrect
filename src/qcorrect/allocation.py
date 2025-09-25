@@ -213,8 +213,8 @@ def validate_allocation(
             for trace_node, port_offset in trace_qubit(module, node)[1:]:
                 try:
                     trace_node_address = cast(
-                        "dict ", trace_node.metadata["qubit_addresses"]
-                    )[port_offset]
+                        "dict[str, dict[int, dict[str, int]]]", trace_node.metadata
+                    )["qubit_addresses"][port_offset]
                 except KeyError as e:
                     raise KeyError(
                         f"Qubit address dict not found for node ({trace_node})"
