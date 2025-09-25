@@ -78,7 +78,7 @@ def get_qalloc_nodes(hugr: Hugr[Op]) -> list[Node]:
 
 
 def add_qubit_address_label(
-    hugr: Hugr[Op], node: Node, port_offset: int, address: QubitAddress
+    node_data: NodeData, port_offset: int, address: QubitAddress
 ) -> None:
     """Add qubit address (block_id and position) to a node metadata for a specific
     port_offset.
@@ -89,10 +89,10 @@ def add_qubit_address_label(
         port_offset: port offset that corresponds to qubit
         address: block_id and position in logical block
     """
-    if "qubit_addresses" not in hugr[node].metadata:
-        hugr[node].metadata["qubit_addresses"] = {}
+    if "qubit_addresses" not in node_data.metadata:
+        node_data.metadata["qubit_addresses"] = {}
 
-    hugr[node].metadata["qubit_addresses"][port_offset] = {
+    node_data.metadata["qubit_addresses"][port_offset] = {
         "block_id": address.block,
         "position": address.position,
     }
@@ -120,7 +120,7 @@ def trace_qubit(
         A list of tuples for each node and port offset.
     """
     if address is not None:
-        add_qubit_address_label(hugr, start_node, port_offset, address)
+        add_qubit_address_label(hugr[start_node], port_offset, address)
 
     # Get link to next node and port kind
     out_link = list(hugr.outgoing_links(start_node))[port_offset]
