@@ -88,7 +88,9 @@ def test_lowering():
         code.x(q)
         code.measure(q)
 
-    qct_hugr = code.lower(main.compile())
+    qct_hugr = main.compile()
+
+    code.lower(qct_hugr)
 
     qct_node_names = {data.op.name() for _, data in qct_hugr.modules[0].nodes()}
 
@@ -115,11 +117,10 @@ def test_phys_and_code_operations():
 
     hugr = main.compile()
 
-    hugr.extensions.append(code.hugr_ext)
+    code.lower(hugr)
 
-    lowered_hugr = code.lower(hugr)
-
-    assert isinstance(lowered_hugr, Package)
+    # assert isinstance(hugr, Package)
+    check_hugr(hugr.to_bytes())
 
 
 def test_simulation():
@@ -133,12 +134,15 @@ def test_simulation():
         code.x(q)
         result("res", code.measure(q))
 
-    lowered_hugr = code.lower(main.compile())
+    hugr = main.compile()
+
+    code.lower(hugr)
 
     res = QsysResult(
-        build(lowered_hugr, "time_shot").run_shots(
-            Quest(), n_qubits=n_qubits, n_shots=1
-        )
+        build(hugr, "time_shot").run_shots(Quest(), n_qubits=n_qubits, n_shots=1)
     ).register_counts()["res"]
 
     assert Counter({f"{'1' * n_qubits}": 1}) == res
+
+
+test_phys_and_code_operations()

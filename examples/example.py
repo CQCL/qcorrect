@@ -77,4 +77,4 @@ def main() -> None:
 
 hugr = main.compile()
 
-hugr = code.lower(hugr)
+code.lower(hugr)

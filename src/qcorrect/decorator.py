@@ -206,7 +206,7 @@ class CodeDefinition(ModuleType, Generic[P]):
             comptime_args=ty.comptime_args,
         )
 
-    def lower(self, package: Package) -> Package:
+    def lower(self, package: Package) -> None:
         """Function to lower from `outer` operations to `inner`.
 
         Any `outer` operations are replaced with calls to function definitions defined
@@ -310,8 +310,6 @@ class CodeDefinition(ModuleType, Generic[P]):
                 for p_in in in_ports:
                     package.modules[0].delete_link(node.out(i), p_in)
                     package.modules[0].add_link(call_node.out(i), p_in)
-
-        return package
 
     def encode(self, hugr: Package) -> Package:
         """Method to encode a hugr using code operations
