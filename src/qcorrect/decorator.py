@@ -64,7 +64,7 @@ def operation(op: GuppyDefinition) -> Callable[[Callable[..., F]], F]:
 
     def dec(defn: Callable[..., F]) -> F:
         defn.__setattr__("__qct_op__", True)
-        defn.__setattr__("__tket_op__", op)
+        defn.__setattr__("__hugr_op__", op)
 
         return defn  #  type: ignore[return-value]
 
@@ -213,108 +213,110 @@ class CodeDefinition(ModuleType, Generic[P]):
         in the hugr extension from the code.
         """
 
-        # Find all nodes to replace
-        nodes_to_replace = [
-            (node, data, data.op.op_def().name)
-            for node, data in package.modules[0].nodes()
-            if isinstance(data.op, ops.ExtOp)
-            and data.op.op_def().name in self.hugr_ext.operations
-        ]
+        for hugr_module in package.modules:
+            # Find all nodes to replace
+            nodes_to_replace = [
+                (node, data, data.op.op_def().name)
+                for node, data in hugr_module.nodes()
+                if isinstance(data.op, ops.ExtOp)
+                and data.op.op_def().name in self.hugr_ext.operations
+            ]
 
-        # Get list of op names
-        ops_used = [name for _, _, name in nodes_to_replace]
+            # Get list of op names
+            ops_used = [name for _, _, name in nodes_to_replace]
 
-        # Add all lowering functions
-        func_defn_node = {}
+            # Add all lowering functions
+            func_defn_node = {}
 
-        for f_name, op in self.hugr_ext.operations.items():
-            if f_name not in ops_used:
-                continue
-            for lower_funcs in op.lower_funcs:
-                lower_hugr = lower_funcs.hugr
+            for f_name, op in self.hugr_ext.operations.items():
+                if f_name not in ops_used:
+                    continue
+                for lower_funcs in op.lower_funcs:
+                    lower_hugr = lower_funcs.hugr
 
-                # Delete the module root and change to function definition
-                assert isinstance(lower_hugr[lower_hugr.module_root].op, ops.Module)
-                assert lower_hugr[lower_hugr.module_root].metadata["name"] == "__main__"
-
-                lower_hugr.entrypoint = lower_hugr.module_root
-
-                # Find node for the function definition
-                try:
-                    func_node = next(
-                        node
-                        for node, data in lower_hugr.nodes()
-                        if isinstance(data.op, ops.FuncDefn)
-                        and data.op.f_name == f_name
+                    # Delete the module root and change to function definition
+                    assert isinstance(lower_hugr[lower_hugr.module_root].op, ops.Module)
+                    assert (
+                        lower_hugr[lower_hugr.module_root].metadata["name"]
+                        == "__main__"
                     )
-                except StopIteration as e:
-                    raise NameError(
-                        f"Function Definition ({f_name}) not found in hugr."
-                    ) from e
 
-                defn_nodes = package.modules[0].insert_hugr(
-                    lower_hugr, package.modules[0].module_root
+                    lower_hugr.entrypoint = lower_hugr.module_root
+
+                    # Find node for the function definition
+                    try:
+                        func_node = next(
+                            node
+                            for node, data in lower_hugr.nodes()
+                            if isinstance(data.op, ops.FuncDefn)
+                            and data.op.f_name == f_name
+                        )
+                    except StopIteration as e:
+                        raise NameError(
+                            f"Function Definition ({f_name}) not found in hugr."
+                        ) from e
+
+                    defn_nodes = hugr_module.insert_hugr(
+                        lower_hugr, hugr_module.module_root
+                    )
+
+                    # Get new node locations
+                    func_defn_node[f_name] = defn_nodes[func_node]
+                    new_module_entry = defn_nodes[lower_hugr.module_root]
+
+                    # Update parent/children
+                    for node in list(hugr_module[new_module_entry].children):
+                        hugr_module[node].parent = hugr_module.module_root
+                        hugr_module[hugr_module.module_root].children.append(node)
+                        hugr_module[new_module_entry].children.remove(node)
+
+                    # Delete original entrypoint
+                    hugr_module.delete_node(new_module_entry)
+
+            # Replace all outer ops with calls to lowering functions
+            for node, data, op_name in nodes_to_replace:
+                op_sig = self.hugr_ext.get_op(op_name).signature.poly_func
+                op_ports_in = [port for _, port in hugr_module.incoming_links(node)]
+                op_ports_out = [port for _, port in hugr_module.outgoing_links(node)]
+
+                assert isinstance(op_sig, ht.PolyFuncType)
+
+                # Define call operation
+                func_call = ops.Call(signature=op_sig, instantiation=op_sig.body)
+
+                # Remove outer node
+                parent = hugr_module[node].parent
+                if parent:
+                    hugr_module[parent].children.remove(node)
+
+                _, hugr_module._nodes[node.idx] = (
+                    hugr_module._nodes[node.idx],
+                    None,
                 )
 
-                # Get new node locations
-                func_defn_node[f_name] = defn_nodes[func_node]
-                new_module_entry = defn_nodes[lower_hugr.module_root]
+                # Free up the metadata dictionary
+                node._metadata = {}
 
-                # Update parent/children
-                for node in list(package.modules[0][new_module_entry].children):
-                    package.modules[0][node].parent = package.modules[0].module_root
-                    package.modules[0][package.modules[0].module_root].children.append(
-                        node
-                    )
-                    package.modules[0][new_module_entry].children.remove(node)
+                hugr_module._free_nodes.append(node)
 
-                # Delete original entrypoint
-                package.modules[0].delete_node(new_module_entry)
+                call_node = hugr_module.add_node(
+                    func_call, data.parent, len(op_ports_out)
+                )
 
-        # Replace all outer ops with calls to lowering functions
-        for node, data, op_name in nodes_to_replace:
-            op_sig = self.hugr_ext.get_op(op_name).signature.poly_func
-            op_ports_in = [port for _, port in package.modules[0].incoming_links(node)]
-            op_ports_out = [port for _, port in package.modules[0].outgoing_links(node)]
+                hugr_module.add_link(
+                    func_defn_node[op_name].out(0),
+                    call_node.inp(func_call._function_port_offset()),
+                )
 
-            assert isinstance(op_sig, ht.PolyFuncType)
-
-            # Define call operation
-            func_call = ops.Call(signature=op_sig, instantiation=op_sig.body)
-
-            # Remove outer node
-            parent = package.modules[0][node].parent
-            if parent:
-                package.modules[0][parent].children.remove(node)
-
-            _, package.modules[0]._nodes[node.idx] = (
-                package.modules[0]._nodes[node.idx],
-                None,
-            )
-
-            # Free up the metadata dictionary
-            node._metadata = {}
-
-            package.modules[0]._free_nodes.append(node)
-
-            call_node = package.modules[0].add_node(
-                func_call, data.parent, len(op_ports_out)
-            )
-
-            package.modules[0].add_link(
-                func_defn_node[op_name].out(0),
-                call_node.inp(func_call._function_port_offset()),
-            )
-
-            # Link nodes
-            for i, out_ports in enumerate(op_ports_in):
-                for p_out in out_ports:
-                    package.modules[0].delete_link(p_out, node.inp(i))
-                    package.modules[0].add_link(p_out, call_node.inp(i))
-            for i, in_ports in enumerate(op_ports_out):
-                for p_in in in_ports:
-                    package.modules[0].delete_link(node.out(i), p_in)
-                    package.modules[0].add_link(call_node.out(i), p_in)
+                # Link nodes
+                for i, out_ports in enumerate(op_ports_in):
+                    for p_out in out_ports:
+                        hugr_module.delete_link(p_out, node.inp(i))
+                        hugr_module.add_link(p_out, call_node.inp(i))
+                for i, in_ports in enumerate(op_ports_out):
+                    for p_in in in_ports:
+                        hugr_module.delete_link(node.out(i), p_in)
+                        hugr_module.add_link(call_node.out(i), p_in)
 
     def encode(self, hugr: Package) -> Package:
         """Method to encode a hugr using code operations
