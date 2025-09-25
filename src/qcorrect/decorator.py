@@ -64,7 +64,7 @@ def operation(op: GuppyDefinition) -> Callable[[Callable[..., F]], F]:
 
     def dec(defn: Callable[..., F]) -> F:
         defn.__setattr__("__qct_op__", True)
-        defn.__setattr__("__hugr_op__", op)
+        defn.__setattr__("__guppy_std_def__", op)
 
         return defn  #  type: ignore[return-value]
 
@@ -317,15 +317,3 @@ class CodeDefinition(ModuleType, Generic[P]):
                     for p_in in in_ports:
                         hugr_module.delete_link(node.out(i), p_in)
                         hugr_module.add_link(call_node.out(i), p_in)
-
-    def encode(self, hugr: Package) -> Package:
-        """Method to encode a hugr using code operations
-
-        Args:
-            hugr: program to be encoded
-        """
-
-        # Loop through hugr operations
-        # Replace operations in program with code `outer` operations
-
-        return hugr
