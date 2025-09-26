@@ -93,10 +93,10 @@ def test_lowering():
 
     qct_node_names = {data.op.name() for _, data in qct_hugr.modules[0].nodes()}
 
-    # We are testing that the set of names matches between the hugr modules
+    # We are testing that the set of op names matches between the hugr modules.
     # Future tests should be more comprehensive but we are currently limited by
-    # how `insert_hugr` and builtin functions being inserted twice. This should
-    # be fixed in the future with hugr linking.
+    # `insert_hugr` inserting guppy builtin functions multiple times into the hugr
+    # during lowering. This should be fixed in the future with hugr linking.
     assert qct_node_names == phys_node_names
 
     # Check hugr
@@ -118,7 +118,6 @@ def test_phys_and_code_operations():
 
     code.lower(hugr)
 
-    # assert isinstance(hugr, Package)
     check_hugr(hugr.to_bytes())
 
 
