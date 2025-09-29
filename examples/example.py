@@ -1,9 +1,8 @@
-from collections.abc import Callable
 from typing import Generic, no_type_check
 
 from guppylang.decorator import guppy
 from guppylang.std import quantum as phys
-from guppylang.std.builtins import array, comptime, nat, owned
+from guppylang.std.builtins import array, comptime, owned
 
 import qcorrect as qct
 
@@ -11,18 +10,17 @@ import qcorrect as qct
 N = guppy.nat_var("N")
 
 
-@qct.type
+@qct.block
 class CodeBlock(Generic[N]):
     data_qs: array[phys.qubit, N]
 
 
 # Define code operations
 class CodeDef(qct.CodeDefinition):
-    def __init__(self, n: nat):
-        self.n: nat = n
+    n: int
 
-    @qct.operation
-    def zero(self) -> Callable:
+    @qct.operation(op=phys.qubit)
+    def zero(self):
         @guppy
         @no_type_check
         def circuit() -> "CodeBlock[comptime(self.n)]":
@@ -30,8 +28,8 @@ class CodeDef(qct.CodeDefinition):
 
         return circuit
 
-    @qct.operation
-    def cx(self) -> Callable:
+    @qct.operation(op=phys.cx)
+    def cx(self):
         @guppy
         @no_type_check
         def circuit(
@@ -42,8 +40,17 @@ class CodeDef(qct.CodeDefinition):
 
         return circuit
 
-    @qct.operation
-    def measure(self) -> Callable:
+    @qct.operation(op=phys.cx)
+    def cx_intra_block(self):
+        @guppy
+        @no_type_check
+        def circuit(qb: "CodeBlock[comptime(self.n)]", ctl: int, tgt: int) -> None:
+            phys.cx(qb.data_qs[ctl], qb.data_qs[tgt])
+
+        return circuit
+
+    @qct.operation(op=phys.measure)
+    def measure(self):
         @guppy
         @no_type_check
         def circuit(
@@ -55,7 +62,7 @@ class CodeDef(qct.CodeDefinition):
 
 
 # Create code instance and get guppy module
-code = CodeDef(5).get_module()
+code = CodeDef(n=5)
 
 
 # Write logical guppy program
@@ -69,3 +76,5 @@ def main() -> None:
 
 
 hugr = main.compile()
+
+code.lower(hugr)

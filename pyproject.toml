@@ -6,9 +6,8 @@ license = {file = "LICENCE"}
 readme = "README.md"
 requires-python = ">=3.10,<4"
 dependencies = [
-    "guppylang~=0.20",
+    "guppylang~=0.21",
     "hugr>=0.12.2",
-    "ruff>=0.12.1",
 ]
 
 [build-system]
@@ -21,9 +20,17 @@ dev = [
     {include-group = "test"}
 ]
 lint = [
+    "mypy>=1.18.2",
+    "pre-commit>=4.3.0",
     "ruff>=0.12.1",
 ]
 test = [
     "ipykernel>=6.29.5",
     "pytest>=8.4.1",
+    "pytest-cov>=7.0.0",
 ]
+
+
+[tool.mypy]
+strict = true
+allow_redefinition = true
